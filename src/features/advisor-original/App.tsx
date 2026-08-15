@@ -1450,6 +1450,16 @@ export default function App() {
               </div>
             )}
 
+            {/* DYNAMIC ISLAND SAFE-AREA SPACER
+                The notch (id="dynamic_island") is absolutely positioned with
+                no space reserved for it, so scrollable content below used to
+                start at the very top and could scroll directly underneath
+                it. This reserves that band in normal flow so the scrollable
+                area's own box starts below the notch and can never scroll
+                back up into it, regardless of scroll offset. md-only, same
+                as the notch itself (mobile view doesn't render the notch). */}
+            <div className="hidden md:block h-8 shrink-0" />
+
             {/* SCREEN VIEWPORTS ROUTING MANAGER */}
             <div className="flex-1 overflow-y-auto px-4 py-3.5 relative space-y-4" id="screen_layout_wrapper">
 
