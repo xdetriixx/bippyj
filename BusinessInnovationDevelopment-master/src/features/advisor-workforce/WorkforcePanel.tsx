@@ -4,6 +4,8 @@ import { scanWorkforce } from "./workforce.functions";
 import { storeWorkforceScan, type StoredWorkforceScan } from "./workforcePersistence";
 import { PILLAR_KEYS, PILLAR_LABELS, weakestPillar, type WorkforceStatus } from "./types";
 import { downloadWorkforceReport } from "./workforceExport";
+import PeerBenchmark from "./PeerBenchmark";
+import WorkforceHowItWorks from "./WorkforceHowItWorks";
 
 /**
  * WorkforcePanel.tsx
@@ -52,7 +54,7 @@ export default function WorkforcePanel({
   sourceText,
   companyName,
   reportId,
-savedScan = null,
+  savedScan = null,
   thresholdInstruction,
 }: WorkforcePanelProps) {
   const [scan, setScan] = useState<StoredWorkforceScan | null>(savedScan);
@@ -77,8 +79,8 @@ savedScan = null,
     }
   }
 
-  // Nothing to scan. Matches the empty states on the Canvas and
-  // Compare tabs, including their wording and their button style.
+  // Nothing saved and nothing to scan. Matches the empty states on the
+  // Canvas and Compare tabs, including their wording and button style.
   if (!scan && (!sourceText || sourceText.trim().length < 200)) {
     return (
       <div className="text-center py-16 space-y-3">
@@ -97,10 +99,12 @@ savedScan = null,
 
   return (
     <div className="space-y-3.5 animate-fade-in text-left">
-      <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase tracking-widest block">
-        AI Workforce Transition Tracker:
-      </span>
-
+<div className="flex items-center justify-between gap-2">
+        <span className="text-[9px] font-sans font-extrabold text-slate-400 uppercase tracking-widest">
+          AI Workforce Transition Tracker:
+        </span>
+        <WorkforceHowItWorks />
+      </div>
       {/* Dark header card, same treatment as the Reports and History headers */}
       <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
         <Users className="absolute -right-3 -bottom-3 w-24 h-24 opacity-10" />
@@ -264,6 +268,7 @@ savedScan = null,
           >
             <Download className="w-3.5 h-3.5" /> Export Client Report
           </button>
+
           {sourceText.trim().length >= 200 && (
             <button
               type="button"
@@ -273,6 +278,13 @@ savedScan = null,
               <RefreshCw className="w-3 h-3" /> Rescan Document
             </button>
           )}
+
+          {/* Cross-report comparison. A score in isolation is not a
+              judgement, which is the point of E4 in the validation
+              report. */}
+          <div className="pt-2 border-t border-slate-200">
+            <PeerBenchmark currentReportId={reportId} />
+          </div>
         </div>
       )}
     </div>

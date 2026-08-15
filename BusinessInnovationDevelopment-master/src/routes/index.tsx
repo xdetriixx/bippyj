@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useAuth, type AccountRole } from "@/lib/auth";
 import { getPasswordStrength, PASSWORD_REQUIREMENTS, validateEmail } from "@/lib/auth-validation";
+import { PhoneChassis } from "@/components/layout/PhoneChassis";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -126,8 +127,8 @@ function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-950 text-foreground">
-      <div className="mobile-app mx-auto flex min-h-screen w-full max-w-[430px] flex-col bg-cgsi-grey shadow-2xl">
+    <PhoneChassis scrollable screenClassName="bg-cgsi-grey text-foreground">
+      <main className="flex min-h-full flex-col">
         <section className="bg-cgsi-navy px-5 pb-8 pt-10 text-white">
           <div className="mb-7 flex items-center gap-3">
             <div className="grid h-11 w-11 place-items-center rounded-md bg-cgsi-red text-lg font-bold">
@@ -347,8 +348,8 @@ function Login() {
             </p>
           </Card>
         </section>
-      </div>
-    </main>
+      </main>
+    </PhoneChassis>
   );
 }
 

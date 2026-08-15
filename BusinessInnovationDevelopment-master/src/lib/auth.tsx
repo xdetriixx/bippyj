@@ -52,8 +52,8 @@ function parseProfile(user: User, data: Record<string, unknown>): AccountProfile
   if (data.role !== "investor" && data.role !== "advisor") return null;
   return {
     uid: user.uid,
-    email: user.email ?? "",
-    displayName: user.displayName ?? "",
+    email: typeof data.email === "string" ? data.email : (user.email ?? ""),
+    displayName: typeof data.displayName === "string" ? data.displayName : (user.displayName ?? ""),
     role: data.role,
   };
 }
@@ -117,9 +117,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const configuredAuth = auth;
     const credential = await createUserWithEmailAndPassword(configuredAuth, email.trim(), password);
     const cleanName = displayName.trim();
+    const accountEmail = credential.user.email ?? email.trim();
     try {
       await updateProfile(credential.user, { displayName: cleanName });
       await setDoc(doc(db, "users", credential.user.uid), {
+        displayName: cleanName,
+        email: accountEmail,
         role,
       });
     } catch (error) {
@@ -128,7 +131,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     const nextProfile: AccountProfile = {
       uid: credential.user.uid,
-      email: credential.user.email ?? email.trim(),
+      email: accountEmail,
       displayName: cleanName,
       role,
     };

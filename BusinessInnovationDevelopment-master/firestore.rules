@@ -16,10 +16,24 @@ service cloud.firestore {
     }
 
     match /users/{userId} {
-      // Authentication stores UID, email, password, and display name.
-      // Firestore stores only the app-specific authorization role.
+      // Authentication remains the password authority. Firestore mirrors only
+      // the safe profile fields needed by the app and Firebase console.
       allow create: if isOwner(userId)
-                    && request.resource.data.keys().hasOnly(['role'])
+                    && request.resource.data.keys().hasOnly([
+                      'displayName',
+                      'email',
+                      'role'
+                    ])
+                    && request.resource.data.keys().hasAll([
+                      'displayName',
+                      'email',
+                      'role'
+                    ])
+                    && request.resource.data.displayName is string
+                    && request.resource.data.displayName.size() >= 2
+                    && request.resource.data.displayName.size() <= 80
+                    && request.resource.data.email is string
+                    && request.resource.data.email == request.auth.token.email
                     && request.resource.data.role in ['investor', 'advisor'];
       allow read: if isOwner(userId);
       allow update: if false;
@@ -220,23 +234,74 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // ESG scan results (watcher-watch merge): a per-company+product risk
-    // summary only, with no post content — no text, no author handles, no
-    // URLs. topPostId is kept as a bare reference for a future lookup path,
-    // but nothing in the app writes the post it points to anywhere, so it
-    // resolves to nothing today. Nothing writes to a `posts` collection
-    // either, so no rule is defined for one and it stays default-denied.
-    // Gated by sign-in only, like decisionEvents above — not owner-scoped
-    // like reports/workspaces.
+    // ESG scan results: evidence-level posts and a per-company/product risk
+    // summary. These are shared scanner outputs rather than user-owned data.
+    match /posts/{postId} {
+      allow read, delete: if false;
+      allow create, update: if signedIn()
+                            && request.resource.data.keys().hasOnly([
+                              'id',
+                              'company',
+                              'product',
+                              'source',
+                              'author',
+                              'text',
+                              'originalText',
+                              'language',
+                              'sentiment',
+                              'reach',
+                              'engagement',
+                              'esg',
+                              'ts',
+                              'url',
+                              'isComment'
+                            ])
+                            && request.resource.data.keys().hasAll([
+                              'id',
+                              'product',
+                              'source',
+                              'author',
+                              'text',
+                              'sentiment',
+                              'reach',
+                              'engagement',
+                              'esg',
+                              'ts'
+                            ])
+                            && request.resource.data.text is string
+                            && request.resource.data.sentiment is number;
+    }
+
     match /insights/{insightId} {
       allow read, delete: if false;
       allow create, update: if signedIn()
-        && request.resource.data.keys().hasAll([
-            "company", "product", "riskScore", "severity", "esg",
-            "reason", "postCount", "topPostId", "ts"
-          ])
-        && request.resource.data.company is string
-        && request.resource.data.riskScore is number;
+                            && request.resource.data.keys().hasOnly([
+                              'company',
+                              'product',
+                              'riskScore',
+                              'severity',
+                              'esg',
+                              'reason',
+                              'postCount',
+                              'topPostId',
+                              'topPostUrl',
+                              'topPostText',
+                              'ts'
+                            ])
+                            && request.resource.data.keys().hasAll([
+                              'company',
+                              'product',
+                              'riskScore',
+                              'severity',
+                              'esg',
+                              'reason',
+                              'postCount',
+                              'topPostId',
+                              'topPostText',
+                              'ts'
+                            ])
+                            && request.resource.data.company is string
+                            && request.resource.data.riskScore is number;
     }
   }
 }
