@@ -1463,6 +1463,16 @@ export default function App() {
             {/* SCREEN VIEWPORTS ROUTING MANAGER */}
             <div className="flex-1 overflow-y-auto px-4 py-3.5 relative space-y-4" id="screen_layout_wrapper">
 
+              {/* NOTCH FADE MASK — purely cosmetic. The safe-area spacer
+                  above stops content from being covered by the notch, but
+                  scrolled content still ends on a hard edge right at its
+                  boundary, which reads as jarring. This fades + blurs the
+                  last ~24px of scroll instead. Sticks to the top of this
+                  scroll container; negative margins bleed it into the
+                  container's own padding so it spans full width flush with
+                  the top, matching the notch's md-only visibility. */}
+              <div className="hidden md:block sticky top-0 -mx-4 -mt-3.5 h-6 z-30 pointer-events-none bg-gradient-to-b from-slate-50 to-transparent backdrop-blur-[2px]" />
+
               {/* ==================== TAB 1: REPORTS PORTAL ==================== */}
               {activeTab === 'reports' && (
                 <div className="space-y-4 animate-fade-in">
