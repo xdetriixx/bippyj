@@ -11,12 +11,12 @@ firebase use --add
 firebase deploy --only firestore:rules,storage
 ```
 
-Firebase stores authentication, one authorization field, investor-created records, and advisor
-reports that users explicitly upload:
+Firebase stores authentication, safe profile fields, investor-created records, and advisor reports
+that users explicitly upload:
 
 ```text
 Firebase Authentication: UID, email, password, display name
-Firestore: users/{userId} (investor/advisor role only)
+Firestore: users/{userId} (display name, email, and investor/advisor role; never a password)
 Firestore: users/{userId}/investmentWorkspaces/{ticker} (private investor decision inputs and review baseline)
 Firestore: users/{userId}/portfolioTransactions/{transactionId} (private simulated buy/sell records)
 Storage:  reports/{userId}/{reportId}/{originalFile}

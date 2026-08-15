@@ -71,7 +71,13 @@ export function StockCard({ stock }: { stock: Stock }) {
           </div>
         </div>
 
-        <EsgBadge strength={stock.esgStrength} score={stock.esgScore} />
+        <div className="w-20 shrink-0 sm:w-24" aria-hidden="true">
+          <MiniChart
+            data={market?.trend.map((point) => point.close) ?? stock.trend}
+            positive={positive}
+          />
+        </div>
+        <span className="sr-only">30-session closing trend</span>
 
         <div className="w-[68px] shrink-0 text-right">
           <div className="text-sm font-semibold tabular-nums text-slate-900">
@@ -92,46 +98,35 @@ export function StockCard({ stock }: { stock: Stock }) {
 
       {expanded && (
         <div className="mt-3 border-t pt-3">
-          <div className="mb-3 rounded-md bg-slate-50 px-2 py-1.5">
-            <div className="mb-1 flex items-center justify-between text-[9px] uppercase tracking-wide text-muted-foreground">
-              <span>30-session closing trend</span>
-              <span className="inline-flex items-center gap-1">
-                {marketLoading && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
-                {marketLoading
-                  ? "Loading provider"
-                  : market
-                    ? `${market.source} · ${market.cadence}`
-                    : marketError
-                      ? "Illustrative fallback"
-                      : "Load on demand"}
-              </span>
-            </div>
-            <MiniChart
-              data={market?.trend.map((point) => point.close) ?? stock.trend}
-              positive={positive}
-            />
-            {market && (
-              <div
-                className={`mt-1 text-[9px] ${
-                  market.mode === "provider" ? "text-emerald-700" : "text-amber-700"
-                }`}
-              >
-                {market.mode === "provider" ? `As of ${market.asOf}` : market.message}
-              </div>
-            )}
-            {marketError && (
-              <div className="mt-1 text-[9px] text-amber-700">
-                Market service could not be reached; illustrative values remain visible.
-              </div>
-            )}
-          </div>
           <div className="flex flex-wrap items-center gap-1.5">
+            <EsgBadge strength={stock.esgStrength} score={stock.esgScore} />
             <RiskBadge level={stock.risk} />
             <MatchBadge score={stock.match} />
-            <span className="ml-auto text-[10px] text-muted-foreground">
-              Tap View for full ESG details
+            <span className="ml-auto inline-flex items-center gap-1 text-[9px] uppercase tracking-wide text-muted-foreground">
+              {marketLoading && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+              {marketLoading
+                ? "Loading provider"
+                : market
+                  ? `${market.source} · ${market.cadence}`
+                  : marketError
+                    ? "Illustrative fallback"
+                    : "Load on demand"}
             </span>
           </div>
+          {market && (
+            <div
+              className={`mt-1.5 text-[9px] ${
+                market.mode === "provider" ? "text-emerald-700" : "text-amber-700"
+              }`}
+            >
+              {market.mode === "provider" ? `Market trend as of ${market.asOf}` : market.message}
+            </div>
+          )}
+          {marketError && (
+            <div className="mt-1.5 text-[9px] text-amber-700">
+              Market service could not be reached; illustrative values remain visible.
+            </div>
+          )}
           <p className="mt-2 line-clamp-2 text-xs leading-relaxed text-slate-600">
             {stock.description}
           </p>
