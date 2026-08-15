@@ -220,26 +220,20 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // ESG scan results (watcher-watch merge): evidence-level posts and a
-    // per-company+product risk summary. Gated by sign-in only, like
-    // decisionEvents above — not owner-scoped like reports/workspaces.
-    match /posts/{postId} {
-      allow read, delete: if false;
-      allow create, update: if signedIn()
-        && request.resource.data.keys().hasAll([
-            "id", "product", "source", "author", "text", "sentiment",
-            "reach", "engagement", "esg", "ts"
-          ])
-        && request.resource.data.text is string
-        && request.resource.data.sentiment is number;
-    }
-
+    // ESG scan results (watcher-watch merge): a per-company+product risk
+    // summary only, with no post content — no text, no author handles, no
+    // URLs. topPostId is kept as a bare reference for a future lookup path,
+    // but nothing in the app writes the post it points to anywhere, so it
+    // resolves to nothing today. Nothing writes to a `posts` collection
+    // either, so no rule is defined for one and it stays default-denied.
+    // Gated by sign-in only, like decisionEvents above — not owner-scoped
+    // like reports/workspaces.
     match /insights/{insightId} {
       allow read, delete: if false;
       allow create, update: if signedIn()
         && request.resource.data.keys().hasAll([
             "company", "product", "riskScore", "severity", "esg",
-            "reason", "postCount", "topPostId", "topPostText", "ts"
+            "reason", "postCount", "topPostId", "ts"
           ])
         && request.resource.data.company is string
         && request.resource.data.riskScore is number;
