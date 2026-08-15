@@ -234,44 +234,9 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // ESG scan results: evidence-level posts and a per-company/product risk
-    // summary. These are shared scanner outputs rather than user-owned data.
-    match /posts/{postId} {
-      allow read, delete: if false;
-      allow create, update: if signedIn()
-                            && request.resource.data.keys().hasOnly([
-                              'id',
-                              'company',
-                              'product',
-                              'source',
-                              'author',
-                              'text',
-                              'originalText',
-                              'language',
-                              'sentiment',
-                              'reach',
-                              'engagement',
-                              'esg',
-                              'ts',
-                              'url',
-                              'isComment'
-                            ])
-                            && request.resource.data.keys().hasAll([
-                              'id',
-                              'product',
-                              'source',
-                              'author',
-                              'text',
-                              'sentiment',
-                              'reach',
-                              'engagement',
-                              'esg',
-                              'ts'
-                            ])
-                            && request.resource.data.text is string
-                            && request.resource.data.sentiment is number;
-    }
-
+    // ESG scan results: a per-company/product risk summary only. No post
+    // content is persisted (no text, no author handles, no URLs) — nothing
+    // writes to a `posts` collection, so that path stays default-denied.
     match /insights/{insightId} {
       allow read, delete: if false;
       allow create, update: if signedIn()
@@ -284,8 +249,6 @@ service cloud.firestore {
                               'reason',
                               'postCount',
                               'topPostId',
-                              'topPostUrl',
-                              'topPostText',
                               'ts'
                             ])
                             && request.resource.data.keys().hasAll([
@@ -297,7 +260,6 @@ service cloud.firestore {
                               'reason',
                               'postCount',
                               'topPostId',
-                              'topPostText',
                               'ts'
                             ])
                             && request.resource.data.company is string

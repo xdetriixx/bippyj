@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { scanWithAgent } from "@/lib/scan.functions";
 import { scoreTextsWithAI, translateTexts } from "@/lib/nlp.functions";
 import { scoreVader } from "@/lib/vader";
-import { savePostsToFirestore, saveInsightsToFirestore } from "@/lib/scan-firestore.ts";
+import { saveInsightsToFirestore } from "@/lib/scan-firestore.ts";
 
 import {
   ResponsiveContainer,
@@ -36,6 +36,9 @@ import {
   Leaf,
   Users,
   Scale,
+  
+  
+  
   Info,
   Plus,
   Trash2,
@@ -96,7 +99,7 @@ const PRODUCTS = [
   "CleanHands Sanitizer", // product safety / labeling claims (G)
 ];
 
-// Catalog of supported social platforms ΓÇö each has a real backend fetcher.
+// Catalog of supported social platforms — each has a real backend fetcher.
 // Users add/remove from this catalog in the UI; adding a platform enables it for scanning.
 const PLATFORM_CATALOG: { slug: Source; label: string }[] = [
   { slug: "reddit", label: "Reddit" },
@@ -124,7 +127,7 @@ interface Watchlist {
   createdAt: string;
 }
 
-// Per-platform volume bounds ΓÇö total scan caps scale with platforms selected
+// Per-platform volume bounds — total scan caps scale with platforms selected
 const PER_PLATFORM_MIN = 10;
 const PER_PLATFORM_MAX = 500;
 
@@ -173,9 +176,9 @@ function classifyEsg(text: string): EsgCategory | null {
 }
 
 
-// Social Risk Score (0ΓÇô100) ΓÇö positive posts offset negative ones:
+// Social Risk Score (0–100) — positive posts offset negative ones:
 //   50% net negativity (neg share minus pos share, floored at 0)
-//   25% inverted average mood (compound ΓåÆ 0..1, higher = worse)
+//   25% inverted average mood (compound → 0..1, higher = worse)
 //   15% chatter volume (posts / 200 cap)
 //   10% virality (avg reach+engagement, capped)
 export function riskBreakdown(posts: Post[]) {
@@ -261,7 +264,7 @@ function formatPlatformLabel(p: string) {
 }
 
 function daysBetween(a: string, b: string) {
-  // Inclusive day count: 2026-05-05 ΓåÆ 2026-06-05 = 32 days.
+  // Inclusive day count: 2026-05-05 → 2026-06-05 = 32 days.
   const ms = new Date(b).getTime() - new Date(a).getTime();
   return Math.round(ms / (1000 * 60 * 60 * 24)) + 1;
 }
@@ -272,7 +275,7 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function Dashboard() {
+function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   // Scan-first: user must scan before dashboard appears
   const [hasScanned, setHasScanned] = useState(false);
   const [view, setView] = useState<"dashboard" | "scan">("scan");
@@ -300,7 +303,7 @@ function Dashboard() {
     }
   }, [platforms]);
 
-  // Watchlists ΓÇö persisted bundles of scan settings
+  // Watchlists — persisted bundles of scan settings
   const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
   useEffect(() => {
     try {
@@ -505,7 +508,7 @@ function Dashboard() {
     setSourceBreakdown(null);
     setScanProgress(10);
 
-    // Smooth progress bar while the network request is in flight ΓÇö the real
+    // Smooth progress bar while the network request is in flight — the real
     // scan time depends on Firecrawl + public API latency.
     let progress = 10;
     const interval = setInterval(() => {
@@ -549,7 +552,7 @@ function Dashboard() {
       }
 
       // ESG classification via Lovable AI. Sentiment is computed locally
-      // with VADER ΓÇö deterministic, no network, spec-exact compound score.
+      // with VADER — deterministic, no network, spec-exact compound score.
       let aiScores: Array<{ esg: EsgCategory | null }> = [];
       if (raw.length > 0) {
         try {
@@ -637,34 +640,26 @@ function Dashboard() {
       };
       setLastScan(scanMeta);
 
-      // Best-effort persistence ΓÇö never blocks the UI on a Firestore hiccup.
-      // Saves the scan results only, not the scan parameters in scanMeta:
-      // raw posts as evidence, plus a per-product risk insight so advisors
-      // can act on the summary without reading through raw posts first.
-      savePostsToFirestore(scored).catch((e) => {
-        console.warn("savePostsToFirestore failed", e);
-      });
-
       const postCountByProduct = new Map<string, number>();
       for (const p of scored) {
         postCountByProduct.set(p.product, (postCountByProduct.get(p.product) ?? 0) + 1);
       }
-      const insights = generateAlerts(scored).map((alert) => {
-        const topPost = scored.find((p) => p.id === alert.topPostId);
-        return {
-          company: scanCompany.trim(),
-          product: alert.product,
-          riskScore: alert.riskScore,
-          severity: alert.severity,
-          esg: alert.esg,
-          reason: alert.reason,
-          postCount: postCountByProduct.get(alert.product) ?? 0,
-          topPostId: alert.topPostId,
-          topPostUrl: topPost?.url,
-          topPostText: topPost?.text ?? "",
-          ts: new Date().toISOString(),
-        };
-      });
+      const insights = generateAlerts(scored).map((alert) => ({
+        company: scanCompany.trim(),
+        product: alert.product,
+        riskScore: alert.riskScore,
+        severity: alert.severity,
+        esg: alert.esg,
+        reason: alert.reason,
+        postCount: postCountByProduct.get(alert.product) ?? 0,
+        topPostId: alert.topPostId,
+        ts: new Date().toISOString(),
+      }));
+
+      // Best-effort persistence — never blocks the UI on a Firestore hiccup.
+      // Only the risk assessment is saved (score, severity, reason, and one
+      // representative post as evidence). The full set of scraped posts
+      // (author handles, raw text) is intentionally NOT persisted here.
       saveInsightsToFirestore(insights).catch((e) => {
         console.warn("saveInsightsToFirestore failed", e);
       });
@@ -682,7 +677,7 @@ function Dashboard() {
       clearInterval(interval);
       console.error(err);
       setScanError(
-        err instanceof Error ? err.message : "Scan failed ΓÇö check your network and try again.",
+        err instanceof Error ? err.message : "Scan failed — check your network and try again.",
       );
     } finally {
       clearInterval(interval);
@@ -713,21 +708,52 @@ function Dashboard() {
   const topAlerts = useMemo(() => alerts.slice(0, 5), [alerts]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col max-w-md mx-auto border-x border-border">
+    <div
+      className={
+        embedded
+          ? "flex flex-col"
+          : "min-h-screen bg-background text-foreground flex flex-col max-w-md mx-auto border-x border-border"
+      }
+    >
       {/* Top bar */}
-      <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center gap-3">
-        <div className="size-9 rounded-lg bg-primary text-primary-foreground grid place-items-center">
-          <Shield className="size-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-base font-semibold leading-tight">Sentiment Watch</h1>
-          <p className="text-xs text-muted-foreground truncate">
-            ASEAN consumer mid-cap ┬╖ {hasScanned ? "Live risk overview" : "Run a scan to begin"}
-          </p>
-        </div>
-      </header>
+      {!embedded && (
+        <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-primary text-primary-foreground grid place-items-center">
+            <Shield className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold leading-tight">Sentiment Watch</h1>
+            <p className="text-xs text-muted-foreground truncate">
+              ASEAN consumer mid-cap · {hasScanned ? "Live risk overview" : "Run a scan to begin"}
+            </p>
+          </div>
+        </header>
+      )}
 
-      <main className="flex-1 p-4 pb-24 space-y-4">
+      {embedded && (
+        <nav className="grid grid-cols-2 rounded-lg border border-border bg-card/60 p-1 mb-3 text-xs">
+          <button
+            onClick={() => setView("scan")}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 font-medium ${
+              view === "scan" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <ScanLine className="size-3.5" />
+            Scan
+          </button>
+          <button
+            onClick={() => setView("dashboard")}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 font-medium ${
+              view === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <Home className="size-3.5" />
+            Dashboard
+          </button>
+        </nav>
+      )}
+
+      <main className={embedded ? "flex-1 space-y-4" : "flex-1 p-4 pb-24 space-y-4"}>
         {view === "scan" && (
           <ScanView
             platforms={platforms}
@@ -830,7 +856,7 @@ function Dashboard() {
               ok: !!scanFrom && !!scanTo && rangeValid,
               label: "Date range",
               value:
-                scanFrom && scanTo ? `${scanFrom} ΓåÆ ${scanTo}` : "Not set",
+                scanFrom && scanTo ? `${scanFrom} → ${scanTo}` : "Not set",
               required: true,
             },
             {
@@ -892,26 +918,28 @@ function Dashboard() {
       </main>
 
       {/* Bottom tab bar */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-border bg-card/95 backdrop-blur grid grid-cols-2 z-30">
-        <button
-          onClick={() => setView("dashboard")}
-          className={`flex flex-col items-center gap-1 py-3 text-xs ${
-            view === "dashboard" ? "text-primary" : "text-muted-foreground"
-          }`}
-        >
-          <Home className="size-5" />
-          Dashboard
-        </button>
-        <button
-          onClick={() => setView("scan")}
-          className={`flex flex-col items-center gap-1 py-3 text-xs ${
-            view === "scan" ? "text-primary" : "text-muted-foreground"
-          }`}
-        >
-          <ScanLine className="size-5" />
-          Scan
-        </button>
-      </nav>
+      {!embedded && (
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-border bg-card/95 backdrop-blur grid grid-cols-2 z-30">
+          <button
+            onClick={() => setView("dashboard")}
+            className={`flex flex-col items-center gap-1 py-3 text-xs ${
+              view === "dashboard" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <Home className="size-5" />
+            Dashboard
+          </button>
+          <button
+            onClick={() => setView("scan")}
+            className={`flex flex-col items-center gap-1 py-3 text-xs ${
+              view === "scan" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <ScanLine className="size-5" />
+            Scan
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
@@ -1009,7 +1037,7 @@ function DashboardView({
     return filteredPosts.filter((p) => p.ts.slice(5, 10) === selectedDay);
   }, [filteredPosts, selectedDay]);
 
-  // Top posts grouped by platform ΓÇö up to 3 highest-impact posts per platform
+  // Top posts grouped by platform — up to 3 highest-impact posts per platform
   // (ranked by engagement + reach, tiebreaker: absolute sentiment).
   const topPostsByPlatform = useMemo(() => {
     const map = new Map<string, Post[]>();
@@ -1033,7 +1061,7 @@ function DashboardView({
       .sort((a, b) => b.total - a.total);
   }, [alertPosts]);
 
-  // Platform summary ΓÇö every platform that returned posts, with sentiment mix.
+  // Platform summary — every platform that returned posts, with sentiment mix.
   const platformSummary = useMemo(() => {
     const map = new Map<
       string,
@@ -1074,7 +1102,7 @@ function DashboardView({
     }
     const dayMs = 86_400_000;
     // start is 00:00:00Z of the first day; end is 23:59:59Z of the last day.
-    // floor((end-start)/dayMs) gives (N-1) full-day gaps ΓåÆ +1 = N days.
+    // floor((end-start)/dayMs) gives (N-1) full-day gaps → +1 = N days.
     const days = Math.max(1, Math.floor((end - start) / dayMs) + 1);
 
     const buckets: Post[][] = Array.from({ length: days }, () => []);
@@ -1097,7 +1125,7 @@ function DashboardView({
 
   return (
     <>
-      {/* Sticky summary ΓÇö Risk score + Alerts + Sentiment stay visible while scrolling */}
+      {/* Sticky summary — Risk score + Alerts + Sentiment stay visible while scrolling */}
       <div
         className={`sticky top-[57px] z-10 -mx-4 px-4 bg-background/95 backdrop-blur border-b border-border transition-all duration-200 ${
           compact ? "pt-1.5 pb-1.5 space-y-1.5" : "pt-2 pb-3 space-y-3"
@@ -1128,7 +1156,7 @@ function DashboardView({
                 </p>
                 <div className={`text-5xl font-bold tabular-nums ${tone}`}>{liveRisk}</div>
                 <p className="text-[11px] text-muted-foreground">
-                  {liveRisk > 60 ? "Elevated ΓÇö review alerts" : liveRisk > 40 ? "Watch closely" : "Healthy"}
+                  {liveRisk > 60 ? "Elevated — review alerts" : liveRisk > 40 ? "Watch closely" : "Healthy"}
                 </p>
               </CardContent>
             </Card>
@@ -1156,7 +1184,7 @@ function DashboardView({
         )}
       </div>
 
-      {/* Filters ΓÇö sit just above the trend, scroll normally */}
+      {/* Filters — sit just above the trend, scroll normally */}
       <Card>
         <CardContent className="pt-3 pb-3 space-y-2">
           <div className="flex items-center justify-between">
@@ -1290,7 +1318,7 @@ function DashboardView({
                   <div key={row.source} className="flex items-center gap-2 text-[11px]">
                     <span className="flex-1 truncate font-medium">{formatPlatformLabel(row.source)}</span>
                     <span className="text-muted-foreground tabular-nums">{row.raw}</span>
-                    <span className="text-muted-foreground">ΓåÆ</span>
+                    <span className="text-muted-foreground">→</span>
                     <span className="font-semibold tabular-nums">{row.kept}</span>
                   </div>
                 ))}
@@ -1308,7 +1336,7 @@ function DashboardView({
             <div>
               <p className="text-sm font-semibold">Risk trend ({trend.length} day{trend.length === 1 ? "" : "s"})</p>
               {lastScan?.from && lastScan?.to && (
-                <p className="text-[11px] text-muted-foreground">{lastScan.from} ΓåÆ {lastScan.to}</p>
+                <p className="text-[11px] text-muted-foreground">{lastScan.from} → {lastScan.to}</p>
               )}
             </div>
             <Activity className="size-4 text-muted-foreground" />
@@ -1367,7 +1395,7 @@ function DashboardView({
               className="text-[11px] text-primary inline-flex items-center gap-1"
             >
               <X className="size-3" />
-              {selectedDay} ┬╖ clear
+              {selectedDay} · clear
             </button>
           )}
         </div>
@@ -1433,7 +1461,7 @@ function DashboardView({
                                 )}
                               </div>
                               <p className="text-[11px] text-muted-foreground italic line-clamp-2">
-                                ΓÇ£{post.text}ΓÇ¥
+                                “{post.text}”
                               </p>
                               {post.originalText && (
                                 <p className="text-[10px] text-muted-foreground/80 line-clamp-2">
@@ -1444,8 +1472,8 @@ function DashboardView({
                                 </p>
                               )}
                               <p className="text-[10px] text-muted-foreground">
-                                {post.engagement.toLocaleString()} eng ┬╖{" "}
-                                {post.reach.toLocaleString()} reach ┬╖{" "}
+                                {post.engagement.toLocaleString()} eng ·{" "}
+                                {post.reach.toLocaleString()} reach ·{" "}
                                 {post.ts.slice(0, 10)}
                               </p>
                               {post.url && (
@@ -1455,7 +1483,7 @@ function DashboardView({
                                   rel="noopener noreferrer"
                                   className="text-[11px] font-medium text-primary hover:underline inline-flex items-center gap-1"
                                 >
-                                  View original post Γåù
+                                  View original post ↗
                                 </a>
                               )}
                             </div>
@@ -1507,8 +1535,8 @@ function DashboardView({
                             {formatPlatformLabel(p.platform)}
                           </p>
                           <p className="text-xs text-muted-foreground">
-                            {p.total} post{p.total === 1 ? "" : "s"} ┬╖{" "}
-                            {p.negCount} negative ┬╖ {p.posCount} positive
+                            {p.total} post{p.total === 1 ? "" : "s"} ·{" "}
+                            {p.negCount} negative · {p.posCount} positive
                           </p>
                         </div>
                         <div className="text-right shrink-0">
@@ -1532,7 +1560,7 @@ function DashboardView({
       </div>
 
 
-      {/* How the score is calculated ΓÇö simplified */}
+      {/* How the score is calculated — simplified */}
       <Card>
         <CardContent className="pt-4 pb-4 space-y-3">
           <div className="flex items-center gap-2">
@@ -1548,7 +1576,7 @@ function DashboardView({
                 <p className="text-xs font-semibold">Net negativity</p>
                 <span className="text-[10px] text-muted-foreground">50%</span>
               </div>
-              <p className="text-[11px] text-muted-foreground">Share of negative posts, offset by positive ones ΓÇö the biggest driver.</p>
+              <p className="text-[11px] text-muted-foreground">Share of negative posts, offset by positive ones — the biggest driver.</p>
             </div>
             <div className="rounded-lg bg-muted p-3">
               <div className="flex items-center justify-between mb-0.5">
@@ -1569,13 +1597,13 @@ function DashboardView({
                 <p className="text-xs font-semibold">How far it spreads</p>
                 <span className="text-[10px] text-muted-foreground">10%</span>
               </div>
-              <p className="text-[11px] text-muted-foreground">Likes, shares and comments ΓÇö viral posts weigh more.</p>
+              <p className="text-[11px] text-muted-foreground">Likes, shares and comments — viral posts weigh more.</p>
             </div>
           </div>
           <div className="rounded-lg border border-border p-3 text-[11px] text-muted-foreground space-y-1">
-            <p><span className="font-semibold text-foreground">0ΓÇô39</span> Healthy ΓÇö nothing urgent.</p>
-            <p><span className="font-semibold text-orange-500">40ΓÇô59</span> Watch closely.</p>
-            <p><span className="font-semibold text-destructive">60+</span> Triggers an alert ΓÇö review now.</p>
+            <p><span className="font-semibold text-foreground">0–39</span> Healthy — nothing urgent.</p>
+            <p><span className="font-semibold text-orange-500">40–59</span> Watch closely.</p>
+            <p><span className="font-semibold text-destructive">60+</span> Triggers an alert — review now.</p>
           </div>
         </CardContent>
       </Card>
@@ -1584,8 +1612,8 @@ function DashboardView({
       {/* Last scan footer */}
       {lastScan && (
         <p className="text-[11px] text-center text-muted-foreground pt-2">
-          Last scan {new Date(lastScan.ts).toISOString().slice(0, 16).replace("T", " ")} UTC ┬╖{" "}
-          {lastScan.postsIngested.toLocaleString()} ESG posts from {lastScan.rawPostsIngested.toLocaleString()} raw ┬╖ {lastScan.platforms.length} platforms
+          Last scan {new Date(lastScan.ts).toISOString().slice(0, 16).replace("T", " ")} UTC ·{" "}
+          {lastScan.postsIngested.toLocaleString()} ESG posts from {lastScan.rawPostsIngested.toLocaleString()} raw · {lastScan.platforms.length} platforms
         </p>
       )}
     </>
@@ -1725,13 +1753,13 @@ function ScanView(props: {
     setPlatformError(null);
   };
 
-  // Compose platforms label ΓÇö list them instead of "All platforms"
+  // Compose platforms label — list them instead of "All platforms"
   const platformsLabel = (() => {
-    if (platforms.length === 0) return "No platforms ΓÇö add one";
+    if (platforms.length === 0) return "No platforms — add one";
     if (scanPlatforms.length === 0) return "Select platforms";
     const labels = scanPlatforms.map(formatPlatformLabel);
     const joined = labels.join(", ");
-    return joined.length > 40 ? `${labels.length}: ${labels.slice(0, 2).join(", ")}ΓÇª` : joined;
+    return joined.length > 40 ? `${labels.length}: ${labels.slice(0, 2).join(", ")}…` : joined;
   })();
 
   return (
@@ -1753,7 +1781,7 @@ function ScanView(props: {
           </p>
         </div>
 
-        {/* Targets ΓÇö company + products */}
+        {/* Targets — company + products */}
         <div className="space-y-1.5">
           <Label htmlFor="scan-company" className="text-xs">
             Company to scan <span className="text-destructive">*</span>
@@ -1996,7 +2024,7 @@ function ScanView(props: {
             <span className="text-[11px] text-muted-foreground tabular-nums">
               {noneSelected
                 ? "select platforms"
-                : `${effectiveMin.toLocaleString()}ΓÇô${effectiveMax.toLocaleString()} allowed`}
+                : `${effectiveMin.toLocaleString()}–${effectiveMax.toLocaleString()} allowed`}
             </span>
           </div>
           <Input
@@ -2027,8 +2055,8 @@ function ScanView(props: {
           />
           <p className="text-[11px] text-muted-foreground">
             {noneSelected
-              ? `Caps scale with platforms: ${perPlatformMin}ΓÇô${perPlatformMax} per platform.`
-              : `${perPlatformMin}ΓÇô${perPlatformMax} per platform ├ù ${scanPlatforms.length} selected Γëê ${perPlatformShare.toLocaleString()} each.`}
+              ? `Caps scale with platforms: ${perPlatformMin}–${perPlatformMax} per platform.`
+              : `${perPlatformMin}–${perPlatformMax} per platform × ${scanPlatforms.length} selected ≈ ${perPlatformShare.toLocaleString()} each.`}
           </p>
         </div>
 
@@ -2041,7 +2069,7 @@ function ScanView(props: {
                 rangeValid ? "text-muted-foreground" : "text-destructive"
               }`}
             >
-              {scanFrom && scanTo ? `${rangeDays} day${rangeDays === 1 ? "" : "s"}` : "ΓÇö"} ┬╖ max{" "}
+              {scanFrom && scanTo ? `${rangeDays} day${rangeDays === 1 ? "" : "s"}` : "—"} · max{" "}
               {maxRangeDays}d
             </span>
           </div>
@@ -2087,7 +2115,7 @@ function ScanView(props: {
               />
             </div>
             <p className="text-xs text-muted-foreground text-center">
-              ScanningΓÇª {scanProgress}%
+              Scanning… {scanProgress}%
             </p>
           </div>
         )}
@@ -2147,7 +2175,7 @@ function ScanView(props: {
               <Activity className="size-4 text-muted-foreground" />
               <p className="text-xs font-semibold">Results by source</p>
               <span className="ml-auto text-[10px] text-muted-foreground">
-                raw ΓåÆ after ESG
+                raw → after ESG
               </span>
             </div>
             {sourceBreakdown.length === 0 ? (
@@ -2173,7 +2201,7 @@ function ScanView(props: {
                       >
                         {row.raw}
                       </span>
-                      <span className="text-muted-foreground">ΓåÆ</span>
+                      <span className="text-muted-foreground">→</span>
                       <span
                         className={
                           row.kept === 0
@@ -2185,7 +2213,7 @@ function ScanView(props: {
                       </span>
                       {dropped > 0 && (
                         <span className="text-[10px] text-muted-foreground">
-                          (ΓêÆ{dropped})
+                          (−{dropped})
                         </span>
                       )}
                     </li>
@@ -2211,7 +2239,7 @@ function ScanView(props: {
         >
           {scanning ? (
             <>
-              <Loader2 className="size-4 animate-spin" /> ScanningΓÇª
+              <Loader2 className="size-4 animate-spin" /> Scanning…
             </>
           ) : (
             <>
@@ -2379,8 +2407,8 @@ function WatchlistsCard({
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-medium truncate">{w.name}</p>
                     <p className="text-[11px] text-muted-foreground truncate">
-                      {w.company} ┬╖ {w.platforms.length} platform
-                      {w.platforms.length === 1 ? "" : "s"} ┬╖{" "}
+                      {w.company} · {w.platforms.length} platform
+                      {w.platforms.length === 1 ? "" : "s"} ·{" "}
                       {w.products.length} product{w.products.length === 1 ? "" : "s"}
                     </p>
                   </div>

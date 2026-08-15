@@ -2,24 +2,6 @@
 import { collection, doc, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
 
-export type PersistablePost = {
-  id: string;
-  company: string;
-  product: string;
-  source: string;
-  author: string;
-  text: string;
-  originalText?: string;
-  language?: string;
-  sentiment: number;
-  reach: number;
-  engagement: number;
-  esg: string;
-  ts: string;
-  url?: string;
-  isComment?: boolean;
-};
-
 export type PersistableInsight = {
   company: string;
   product: string;
@@ -29,8 +11,6 @@ export type PersistableInsight = {
   reason: string;
   postCount: number;
   topPostId: string;
-  topPostUrl?: string;
-  topPostText: string;
   ts: string;
 };
 
@@ -44,18 +24,6 @@ function stripUndefined<T extends Record<string, unknown>>(obj: T): T {
     if (v !== undefined) (out as Record<string, unknown>)[k] = v;
   }
   return out;
-}
-
-export async function savePostsToFirestore(posts: PersistablePost[]): Promise<void> {
-  if (!db || posts.length === 0) return;
-  const postsRef = collection(db, "posts");
-  const chunks: PersistablePost[][] = [];
-  for (let i = 0; i < posts.length; i += 500) chunks.push(posts.slice(i, i + 500));
-  for (const chunk of chunks) {
-    const batch = writeBatch(db);
-    for (const post of chunk) batch.set(doc(postsRef, post.id), stripUndefined(post));
-    await batch.commit();
-  }
 }
 
 function insightSlug(company: string, product: string): string {

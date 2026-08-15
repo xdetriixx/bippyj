@@ -4,7 +4,7 @@ import {
   Signal, Sliders, ChevronLeft, Plus, Trash2, Edit3, Download, ArrowRight,
   Search, Share2, Globe, RefreshCw, Send, CheckCircle, X, ChevronRight, Sparkles,
   HelpCircle, MessageSquare, Info, ShieldAlert, Award, Play, AlertTriangle,
-  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen
+  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen, Radar
 } from 'lucide-react';
 import { AdvisorMetrics, BMCPoint, BMCResult, PastYearCompareResult, CompetitorOverviewResult } from './types';
 import { PRELOADED_REPORTS } from './preloadedData';
@@ -30,6 +30,7 @@ import {
   comparePastYear,
   parseBmc,
 } from './advisor.functions';
+import SocialScanApp from "@/features/social-scan/App";
 import WorkforcePanel from "@/features/advisor-workforce/WorkforcePanel";
 import type { StoredWorkforceScan } from "@/features/advisor-workforce/workforcePersistence";
 import WorkforceThresholdCard, {
@@ -43,7 +44,7 @@ import WorkforceThresholdCard, {
 
 export default function App() {
   // Mobile app sub-navigation states
-  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'history' | 'settings'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'history' | 'settings' | 'social-scan'>('reports');
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
   // Simulated device hardware features
@@ -1449,8 +1450,28 @@ export default function App() {
               </div>
             )}
 
+            {/* DYNAMIC ISLAND SAFE-AREA SPACER
+                The notch (id="dynamic_island") is absolutely positioned with
+                no space reserved for it, so scrollable content below used to
+                start at the very top and could scroll directly underneath
+                it. This reserves that band in normal flow so the scrollable
+                area's own box starts below the notch and can never scroll
+                back up into it, regardless of scroll offset. md-only, same
+                as the notch itself (mobile view doesn't render the notch). */}
+            <div className="hidden md:block h-8 shrink-0" />
+
             {/* SCREEN VIEWPORTS ROUTING MANAGER */}
             <div className="flex-1 overflow-y-auto px-4 py-3.5 relative space-y-4" id="screen_layout_wrapper">
+
+              {/* NOTCH FADE MASK — purely cosmetic. The safe-area spacer
+                  above stops content from being covered by the notch, but
+                  scrolled content still ends on a hard edge right at its
+                  boundary, which reads as jarring. This fades + blurs the
+                  last ~24px of scroll instead. Sticks to the top of this
+                  scroll container; negative margins bleed it into the
+                  container's own padding so it spans full width flush with
+                  the top, matching the notch's md-only visibility. */}
+              <div className="hidden md:block sticky top-0 -mx-4 -mt-3.5 h-6 z-30 pointer-events-none bg-gradient-to-b from-slate-50 to-transparent backdrop-blur-[2px]" />
 
               {/* ==================== TAB 1: REPORTS PORTAL ==================== */}
               {activeTab === 'reports' && (
@@ -2688,6 +2709,34 @@ export default function App() {
               )}
 
 
+              {/* ==================== TAB 6: SOCIAL SCAN ====================
+                  Always mounted (never conditionally rendered) — SocialScanApp
+                  owns all of its scan state internally via its own useState,
+                  unlike the other tabs whose state lives up in this component.
+                  Unmounting it on tab switch (the `{activeTab === X && (...)}`
+                  pattern used elsewhere) would wipe an in-progress or just-
+                  completed scan every time the advisor taps another tab. So
+                  this stays in the tree and is hidden with a class instead. */}
+              <div className={activeTab === 'social-scan' ? "space-y-4 animate-fade-in" : "hidden"}>
+                <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                  <div className="absolute -right-3 -bottom-3 opacity-15">
+                    <Radar className="w-24 h-24 text-white" />
+                  </div>
+                  <div className="relative space-y-1">
+                    <div className="bg-slate-800 px-2 py-0.5 text-[8px] tracking-widest font-mono font-bold uppercase rounded-sm inline-block">
+                      Sentiment Watch
+                    </div>
+                    <h2 className="text-base font-bold tracking-tight">Social ESG Scan</h2>
+                    <p className="text-[11px] text-slate-350 leading-relaxed max-w-xs font-sans">
+                      Scan social platforms for a company's ESG/reputation risk and surface the posts driving it.
+                    </p>
+                  </div>
+                </div>
+
+                <SocialScanApp embedded />
+              </div>
+
+
               {/* ==================== TAB 5: RUBRIC SETTINGS ==================== */}
               {activeTab === 'settings' && (
                 <div className="space-y-4 animate-fade-in font-sans">
@@ -3206,6 +3255,15 @@ export default function App() {
                   <Sliders className="w-4.5 h-4.5 shrink-0" />
                   <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Rules</span>
                   {activeTab === 'settings' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
+                </button>
+
+                <button
+                  onClick={() => { setActiveTab('social-scan'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
+                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'social-scan' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
+                >
+                  <Radar className="w-4.5 h-4.5 shrink-0" />
+                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Scan</span>
+                  {activeTab === 'social-scan' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
                 </button>
 
               </div>
