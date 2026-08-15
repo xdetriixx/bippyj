@@ -4,7 +4,7 @@ import {
   Signal, Sliders, ChevronLeft, Plus, Trash2, Edit3, Download, ArrowRight,
   Search, Share2, Globe, RefreshCw, Send, CheckCircle, X, ChevronRight, Sparkles,
   HelpCircle, MessageSquare, Info, ShieldAlert, Award, Play, AlertTriangle,
-  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen
+  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen, Radar
 } from 'lucide-react';
 import { AdvisorMetrics, BMCPoint, BMCResult, PastYearCompareResult, CompetitorOverviewResult } from './types';
 import { PRELOADED_REPORTS } from './preloadedData';
@@ -30,6 +30,7 @@ import {
   comparePastYear,
   parseBmc,
 } from './advisor.functions';
+import SocialScanApp from "@/features/social-scan/App";
 import WorkforcePanel from "@/features/advisor-workforce/WorkforcePanel";
 import type { StoredWorkforceScan } from "@/features/advisor-workforce/workforcePersistence";
 import WorkforceThresholdCard, {
@@ -43,7 +44,7 @@ import WorkforceThresholdCard, {
 
 export default function App() {
   // Mobile app sub-navigation states
-  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'history' | 'settings'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'history' | 'settings' | 'social-scan'>('reports');
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
 
   // Simulated device hardware features
@@ -2688,6 +2689,29 @@ export default function App() {
               )}
 
 
+              {/* ==================== TAB 6: SOCIAL SCAN ==================== */}
+              {activeTab === 'social-scan' && (
+                <div className="space-y-4 animate-fade-in">
+                  <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
+                    <div className="absolute -right-3 -bottom-3 opacity-15">
+                      <Radar className="w-24 h-24 text-white" />
+                    </div>
+                    <div className="relative space-y-1">
+                      <div className="bg-slate-800 px-2 py-0.5 text-[8px] tracking-widest font-mono font-bold uppercase rounded-sm inline-block">
+                        Sentiment Watch
+                      </div>
+                      <h2 className="text-base font-bold tracking-tight">Social ESG Scan</h2>
+                      <p className="text-[11px] text-slate-350 leading-relaxed max-w-xs font-sans">
+                        Scan social platforms for a company's ESG/reputation risk and surface the posts driving it.
+                      </p>
+                    </div>
+                  </div>
+
+                  <SocialScanApp embedded />
+                </div>
+              )}
+
+
               {/* ==================== TAB 5: RUBRIC SETTINGS ==================== */}
               {activeTab === 'settings' && (
                 <div className="space-y-4 animate-fade-in font-sans">
@@ -3206,6 +3230,15 @@ export default function App() {
                   <Sliders className="w-4.5 h-4.5 shrink-0" />
                   <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Rules</span>
                   {activeTab === 'settings' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
+                </button>
+
+                <button
+                  onClick={() => { setActiveTab('social-scan'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
+                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'social-scan' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
+                >
+                  <Radar className="w-4.5 h-4.5 shrink-0" />
+                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Scan</span>
+                  {activeTab === 'social-scan' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
                 </button>
 
               </div>

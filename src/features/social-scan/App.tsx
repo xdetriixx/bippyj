@@ -275,7 +275,7 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function Dashboard() {
+function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   // Scan-first: user must scan before dashboard appears
   const [hasScanned, setHasScanned] = useState(false);
   const [view, setView] = useState<"dashboard" | "scan">("scan");
@@ -716,21 +716,52 @@ function Dashboard() {
   const topAlerts = useMemo(() => alerts.slice(0, 5), [alerts]);
 
   return (
-    <div className="min-h-screen bg-background text-foreground flex flex-col max-w-md mx-auto border-x border-border">
+    <div
+      className={
+        embedded
+          ? "flex flex-col"
+          : "min-h-screen bg-background text-foreground flex flex-col max-w-md mx-auto border-x border-border"
+      }
+    >
       {/* Top bar */}
-      <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center gap-3">
-        <div className="size-9 rounded-lg bg-primary text-primary-foreground grid place-items-center">
-          <Shield className="size-5" />
-        </div>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-base font-semibold leading-tight">Sentiment Watch</h1>
-          <p className="text-xs text-muted-foreground truncate">
-            ASEAN consumer mid-cap ┬╖ {hasScanned ? "Live risk overview" : "Run a scan to begin"}
-          </p>
-        </div>
-      </header>
+      {!embedded && (
+        <header className="sticky top-0 z-20 border-b border-border bg-card/80 backdrop-blur px-4 py-3 flex items-center gap-3">
+          <div className="size-9 rounded-lg bg-primary text-primary-foreground grid place-items-center">
+            <Shield className="size-5" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-base font-semibold leading-tight">Sentiment Watch</h1>
+            <p className="text-xs text-muted-foreground truncate">
+              ASEAN consumer mid-cap ┬╖ {hasScanned ? "Live risk overview" : "Run a scan to begin"}
+            </p>
+          </div>
+        </header>
+      )}
 
-      <main className="flex-1 p-4 pb-24 space-y-4">
+      {embedded && (
+        <nav className="grid grid-cols-2 rounded-lg border border-border bg-card/60 p-1 mb-3 text-xs">
+          <button
+            onClick={() => setView("scan")}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 font-medium ${
+              view === "scan" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <ScanLine className="size-3.5" />
+            Scan
+          </button>
+          <button
+            onClick={() => setView("dashboard")}
+            className={`flex items-center justify-center gap-1.5 rounded-md py-1.5 font-medium ${
+              view === "dashboard" ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+            }`}
+          >
+            <Home className="size-3.5" />
+            Dashboard
+          </button>
+        </nav>
+      )}
+
+      <main className={embedded ? "flex-1 space-y-4" : "flex-1 p-4 pb-24 space-y-4"}>
         {view === "scan" && (
           <ScanView
             platforms={platforms}
@@ -895,26 +926,28 @@ function Dashboard() {
       </main>
 
       {/* Bottom tab bar */}
-      <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-border bg-card/95 backdrop-blur grid grid-cols-2 z-30">
-        <button
-          onClick={() => setView("dashboard")}
-          className={`flex flex-col items-center gap-1 py-3 text-xs ${
-            view === "dashboard" ? "text-primary" : "text-muted-foreground"
-          }`}
-        >
-          <Home className="size-5" />
-          Dashboard
-        </button>
-        <button
-          onClick={() => setView("scan")}
-          className={`flex flex-col items-center gap-1 py-3 text-xs ${
-            view === "scan" ? "text-primary" : "text-muted-foreground"
-          }`}
-        >
-          <ScanLine className="size-5" />
-          Scan
-        </button>
-      </nav>
+      {!embedded && (
+        <nav className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md border-t border-border bg-card/95 backdrop-blur grid grid-cols-2 z-30">
+          <button
+            onClick={() => setView("dashboard")}
+            className={`flex flex-col items-center gap-1 py-3 text-xs ${
+              view === "dashboard" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <Home className="size-5" />
+            Dashboard
+          </button>
+          <button
+            onClick={() => setView("scan")}
+            className={`flex flex-col items-center gap-1 py-3 text-xs ${
+              view === "scan" ? "text-primary" : "text-muted-foreground"
+            }`}
+          >
+            <ScanLine className="size-5" />
+            Scan
+          </button>
+        </nav>
+      )}
     </div>
   );
 }
