@@ -11,8 +11,6 @@ export type PersistableInsight = {
   reason: string;
   postCount: number;
   topPostId: string;
-  topPostUrl?: string;
-  topPostText: string;
   ts: string;
 };
 

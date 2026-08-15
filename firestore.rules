@@ -221,17 +221,19 @@ service cloud.firestore {
     }
 
     // ESG scan results (watcher-watch merge): a per-company+product risk
-    // summary only. The raw scraped posts behind each score (author handles,
-    // full text) are intentionally never persisted — nothing in the app
-    // writes to a `posts` collection, so no rule is defined for one and it
-    // stays default-denied. Gated by sign-in only, like decisionEvents
-    // above — not owner-scoped like reports/workspaces.
+    // summary only, with no post content — no text, no author handles, no
+    // URLs. topPostId is kept as a bare reference for a future lookup path,
+    // but nothing in the app writes the post it points to anywhere, so it
+    // resolves to nothing today. Nothing writes to a `posts` collection
+    // either, so no rule is defined for one and it stays default-denied.
+    // Gated by sign-in only, like decisionEvents above — not owner-scoped
+    // like reports/workspaces.
     match /insights/{insightId} {
       allow read, delete: if false;
       allow create, update: if signedIn()
         && request.resource.data.keys().hasAll([
             "company", "product", "riskScore", "severity", "esg",
-            "reason", "postCount", "topPostId", "topPostText", "ts"
+            "reason", "postCount", "topPostId", "ts"
           ])
         && request.resource.data.company is string
         && request.resource.data.riskScore is number;

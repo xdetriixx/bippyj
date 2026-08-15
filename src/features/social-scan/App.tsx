@@ -644,22 +644,17 @@ function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
       for (const p of scored) {
         postCountByProduct.set(p.product, (postCountByProduct.get(p.product) ?? 0) + 1);
       }
-      const insights = generateAlerts(scored).map((alert) => {
-        const topPost = scored.find((p) => p.id === alert.topPostId);
-        return {
-          company: scanCompany.trim(),
-          product: alert.product,
-          riskScore: alert.riskScore,
-          severity: alert.severity,
-          esg: alert.esg,
-          reason: alert.reason,
-          postCount: postCountByProduct.get(alert.product) ?? 0,
-          topPostId: alert.topPostId,
-          topPostUrl: topPost?.url,
-          topPostText: topPost?.text ?? "",
-          ts: new Date().toISOString(),
-        };
-      });
+      const insights = generateAlerts(scored).map((alert) => ({
+        company: scanCompany.trim(),
+        product: alert.product,
+        riskScore: alert.riskScore,
+        severity: alert.severity,
+        esg: alert.esg,
+        reason: alert.reason,
+        postCount: postCountByProduct.get(alert.product) ?? 0,
+        topPostId: alert.topPostId,
+        ts: new Date().toISOString(),
+      }));
 
       // Best-effort persistence — never blocks the UI on a Firestore hiccup.
       // Only the risk assessment is saved (score, severity, reason, and one
