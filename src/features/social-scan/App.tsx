@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { scanWithAgent } from "@/lib/scan.functions";
 import { scoreTextsWithAI, translateTexts } from "@/lib/nlp.functions";
 import { scoreVader } from "@/lib/vader";
-import { savePostsToFirestore, saveInsightsToFirestore } from "@/lib/scan-firestore.ts";
+import { saveInsightsToFirestore } from "@/lib/scan-firestore.ts";
 
 import {
   ResponsiveContainer,
@@ -640,14 +640,6 @@ function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
       };
       setLastScan(scanMeta);
 
-      // Best-effort persistence — never blocks the UI on a Firestore hiccup.
-      // Saves the scan results only, not the scan parameters in scanMeta:
-      // raw posts as evidence, plus a per-product risk insight so advisors
-      // can act on the summary without reading through raw posts first.
-      savePostsToFirestore(scored).catch((e) => {
-        console.warn("savePostsToFirestore failed", e);
-      });
-
       const postCountByProduct = new Map<string, number>();
       for (const p of scored) {
         postCountByProduct.set(p.product, (postCountByProduct.get(p.product) ?? 0) + 1);
@@ -668,6 +660,11 @@ function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
           ts: new Date().toISOString(),
         };
       });
+
+      // Best-effort persistence — never blocks the UI on a Firestore hiccup.
+      // Only the risk assessment is saved (score, severity, reason, and one
+      // representative post as evidence). The full set of scraped posts
+      // (author handles, raw text) is intentionally NOT persisted here.
       saveInsightsToFirestore(insights).catch((e) => {
         console.warn("saveInsightsToFirestore failed", e);
       });

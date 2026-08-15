@@ -220,20 +220,12 @@ service cloud.firestore {
       allow read, update, delete: if false;
     }
 
-    // ESG scan results (watcher-watch merge): evidence-level posts and a
-    // per-company+product risk summary. Gated by sign-in only, like
-    // decisionEvents above — not owner-scoped like reports/workspaces.
-    match /posts/{postId} {
-      allow read, delete: if false;
-      allow create, update: if signedIn()
-        && request.resource.data.keys().hasAll([
-            "id", "product", "source", "author", "text", "sentiment",
-            "reach", "engagement", "esg", "ts"
-          ])
-        && request.resource.data.text is string
-        && request.resource.data.sentiment is number;
-    }
-
+    // ESG scan results (watcher-watch merge): a per-company+product risk
+    // summary only. The raw scraped posts behind each score (author handles,
+    // full text) are intentionally never persisted — nothing in the app
+    // writes to a `posts` collection, so no rule is defined for one and it
+    // stays default-denied. Gated by sign-in only, like decisionEvents
+    // above — not owner-scoped like reports/workspaces.
     match /insights/{insightId} {
       allow read, delete: if false;
       allow create, update: if signedIn()
