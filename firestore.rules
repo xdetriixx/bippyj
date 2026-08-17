@@ -1,0 +1,269 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    function userHasRole(userId, role) {
+      return signedIn()
+             && get(/databases/$(database)/documents/users/$(userId)).data.role == role;
+    }
+
+    match /users/{userId} {
+      // Authentication remains the password authority. Firestore mirrors only
+      // the safe profile fields needed by the app and Firebase console.
+      allow create: if isOwner(userId)
+                    && request.resource.data.keys().hasOnly([
+                      'displayName',
+                      'email',
+                      'role'
+                    ])
+                    && request.resource.data.keys().hasAll([
+                      'displayName',
+                      'email',
+                      'role'
+                    ])
+                    && request.resource.data.displayName is string
+                    && request.resource.data.displayName.size() >= 2
+                    && request.resource.data.displayName.size() <= 80
+                    && request.resource.data.email is string
+                    && request.resource.data.email == request.auth.token.email
+                    && request.resource.data.role in ['investor', 'advisor'];
+      allow read: if isOwner(userId);
+      allow update: if false;
+      allow delete: if isOwner(userId);
+
+      match /investmentWorkspaces/{ticker} {
+        function isInvestorOwner() {
+          return isOwner(userId) && userHasRole(userId, 'investor');
+        }
+
+        function validChecklist(checklist) {
+          return checklist is map
+                 && checklist.keys().hasOnly([
+                   'financialsReviewed',
+                   'materialEsgReviewed',
+                   'risksReviewed',
+                   'peerCompared'
+                 ])
+                 && checklist.keys().hasAll([
+                   'financialsReviewed',
+                   'materialEsgReviewed',
+                   'risksReviewed',
+                   'peerCompared'
+                 ])
+                 && checklist.financialsReviewed is bool
+                 && checklist.materialEsgReviewed is bool
+                 && checklist.risksReviewed is bool
+                 && checklist.peerCompared is bool;
+        }
+
+        function validSnapshot(snapshot) {
+          return snapshot is map
+                 && snapshot.keys().hasOnly([
+                   'price',
+                   'esgScore',
+                   'environmental',
+                   'social',
+                   'governance',
+                   'revenue',
+                   'netIncome',
+                   'carbonTotal',
+                   'renewableEnergy',
+                   'asOf'
+                 ])
+                 && snapshot.keys().hasAll([
+                   'price',
+                   'esgScore',
+                   'environmental',
+                   'social',
+                   'governance',
+                   'revenue',
+                   'netIncome',
+                   'carbonTotal',
+                   'renewableEnergy',
+                   'asOf'
+                 ])
+                 && snapshot.price is number
+                 && snapshot.esgScore is number
+                 && snapshot.environmental is number
+                 && snapshot.social is number
+                 && snapshot.governance is number
+                 && snapshot.revenue is number
+                 && snapshot.netIncome is number
+                 && snapshot.carbonTotal is number
+                 && snapshot.renewableEnergy is number
+                 && snapshot.asOf is string;
+        }
+
+        function validWorkspace() {
+          return request.resource.data.keys().hasOnly([
+                   'ticker',
+                   'decision',
+                   'thesis',
+                   'timeHorizon',
+                   'maxRisk',
+                   'checklist',
+                   'snapshot',
+                   'reviewedAt',
+                   'updatedAt'
+                 ])
+                 && request.resource.data.keys().hasAll([
+                   'ticker',
+                   'decision',
+                   'thesis',
+                   'timeHorizon',
+                   'maxRisk',
+                   'checklist',
+                   'updatedAt'
+                 ])
+                 && request.resource.data.ticker == ticker
+                 && request.resource.data.decision in ['Undecided', 'Buy', 'Watch', 'Avoid']
+                 && request.resource.data.thesis is string
+                 && request.resource.data.thesis.size() <= 1200
+                 && request.resource.data.timeHorizon in [
+                   'Short term',
+                   'Medium term',
+                   'Long term'
+                 ]
+                 && request.resource.data.maxRisk in ['Low', 'Medium', 'High']
+                 && validChecklist(request.resource.data.checklist)
+                 && request.resource.data.updatedAt == request.time
+                 && (!('snapshot' in request.resource.data)
+                     || validSnapshot(request.resource.data.snapshot))
+                 && (!('reviewedAt' in request.resource.data)
+                     || request.resource.data.reviewedAt == request.time);
+        }
+
+        allow read: if isInvestorOwner();
+        allow create, update: if isInvestorOwner() && validWorkspace();
+        allow delete: if isInvestorOwner();
+      }
+
+      match /portfolioTransactions/{transactionId} {
+        function isInvestorOwner() {
+          return isOwner(userId) && userHasRole(userId, 'investor');
+        }
+
+        function validTransaction() {
+          return request.resource.data.keys().hasOnly([
+                   'ticker',
+                   'side',
+                   'quantity',
+                   'executedPrice',
+                   'currency',
+                   'executedAt'
+                 ])
+                 && request.resource.data.keys().hasAll([
+                   'ticker',
+                   'side',
+                   'quantity',
+                   'executedPrice',
+                   'currency',
+                   'executedAt'
+                 ])
+                 && request.resource.data.ticker is string
+                 && request.resource.data.ticker.matches('^[A-Z0-9.-]{1,16}$')
+                 && request.resource.data.side in ['buy', 'sell']
+                 && request.resource.data.quantity is number
+                 && request.resource.data.quantity > 0
+                 && request.resource.data.quantity <= 1000000000
+                 && request.resource.data.executedPrice is number
+                 && request.resource.data.executedPrice > 0
+                 && request.resource.data.executedPrice <= 1000000000
+                 && request.resource.data.currency in ['USD', 'SGD']
+                 && request.resource.data.executedAt == request.time;
+        }
+
+        // Transactions are append-only. Holdings and analytics are derived
+        // by the app instead of being duplicated in Firestore.
+        allow read: if isInvestorOwner();
+        allow create: if isInvestorOwner() && validTransaction();
+        allow update, delete: if false;
+      }
+
+      // Reserved private user collections from the original group rules.
+      // Naming them prevents this rule from overriding the stricter investor
+      // workspace and portfolio rules above.
+      match /{privateCollection}/{document=**} {
+        allow read, write: if isOwner(userId)
+                           && privateCollection in [
+                             'preferences',
+                             'activity',
+                             'analyses',
+                             'chatHistory',
+                             'feedback'
+                           ];
+      }
+    }
+
+    match /reports/{reportId} {
+      // Preserve the advisor team's shared-report behavior.
+      allow read: if signedIn();
+      allow create: if signedIn()
+                    && request.resource.data.ownerId == request.auth.uid;
+      allow update: if signedIn()
+                    && resource.data.ownerId == request.auth.uid
+                    && request.resource.data.ownerId == request.auth.uid;
+      allow delete: if signedIn();
+
+      match /evaluations/{evaluationId} {
+        allow read, delete: if signedIn();
+        allow create, update: if signedIn()
+                              && get(/databases/$(database)/documents/reports/$(reportId)).data.ownerId
+                                 == request.auth.uid;
+      }
+
+      match /comparisons/{comparisonId} {
+        allow read, delete: if signedIn();
+        allow create, update: if signedIn()
+                              && get(/databases/$(database)/documents/reports/$(reportId)).data.ownerId
+                                 == request.auth.uid;
+      }
+    }
+
+    match /decisionEvents/{eventId} {
+      // Legacy collection retained for older app versions.
+      allow create: if signedIn();
+      allow read, update, delete: if false;
+    }
+
+    // ESG scan results: a per-company/product risk summary only. No post
+    // content is persisted (no text, no author handles, no URLs) — nothing
+    // writes to a `posts` collection, so that path stays default-denied.
+    match /insights/{insightId} {
+      allow read, delete: if false;
+      allow create, update: if signedIn()
+                            && request.resource.data.keys().hasOnly([
+                              'company',
+                              'product',
+                              'riskScore',
+                              'severity',
+                              'esg',
+                              'reason',
+                              'postCount',
+                              'topPostId',
+                              'ts'
+                            ])
+                            && request.resource.data.keys().hasAll([
+                              'company',
+                              'product',
+                              'riskScore',
+                              'severity',
+                              'esg',
+                              'reason',
+                              'postCount',
+                              'topPostId',
+                              'ts'
+                            ])
+                            && request.resource.data.company is string
+                            && request.resource.data.riskScore is number;
+    }
+  }
+}
