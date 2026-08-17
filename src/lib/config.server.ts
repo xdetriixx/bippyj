@@ -19,6 +19,9 @@ import process from "node:process";
 export function getServerConfig() {
   return {
     nodeEnv: process.env.NODE_ENV,
+    openAiApiKey: process.env.OPENAI_API_KEY,
+    openAiModel: process.env.OPENAI_MODEL ?? "gpt-5-mini",
+    openAiWebModel: process.env.OPENAI_WEB_MODEL ?? "gpt-5.4-nano",
     groqApiKey: process.env.GROQ_API_KEY,
     groqModel: process.env.GROQ_MODEL ?? "llama-3.3-70b-versatile",
     alphaVantageApiKey: process.env.ALPHA_VANTAGE_API_KEY,

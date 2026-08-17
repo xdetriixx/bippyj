@@ -12,12 +12,7 @@ import {
 } from "firebase/firestore";
 import { deleteObject, getBytes, ref, uploadBytes } from "firebase/storage";
 import { db, ensureAnonymousUser, isFirebaseConfigured, storage } from "@/lib/firebase";
-import type { BMCResult } from "./types";
-import type { CompetitorOverviewResult } from "../advisor-original/types";
-import type { StoredWorkforceScan } from "../advisor-workforce/workforcePersistence";
-import type { StoredGovernanceScan } from "../advisor-original/governancePersistence";
-import { extractTextFromPdf } from "../advisor-original/utils/pdf";
-
+import type { BMCResult, CompetitorOverviewResult, RiskSettings } from "../types";
 
 export { isFirebaseConfigured };
 
@@ -30,8 +25,6 @@ export interface StoredReportSummary {
   pageCount: number;
   status: string;
   isSimulated?: boolean;
-  hasWorkforceScan?: boolean;
-  hasGovernanceScan?: boolean;
   comparisonCompanyName?: string;
   createdAt?: Date;
   updatedAt?: Date;
@@ -40,8 +33,6 @@ export interface StoredReportSummary {
 export interface StoredReportDetail extends StoredReportSummary {
   extractedText: string;
   result: BMCResult | null;
-  workforceScan: StoredWorkforceScan | null;
-  governanceScan: StoredGovernanceScan | null;
   comparisonResult: BMCResult | null;
   competitorOverview: CompetitorOverviewResult | null;
   comparisonOriginalName?: string;
@@ -73,7 +64,7 @@ export async function storeUploadedReport(input: {
   file: File;
   companyName: string;
   reportType: string;
-  extractedText?: string;
+  extractedText: string;
   pageCount: number;
 }): Promise<string | null> {
   if (!db || !storage) return null;
@@ -89,32 +80,59 @@ export async function storeUploadedReport(input: {
   const reportRef = doc(collection(db, "reports"));
   const basePath = `reports/${ownerId}/${reportRef.id}`;
   const pdfPath = `${basePath}/${safeFileName(input.file.name)}`;
+  const extractionPath = `${basePath}/extracted-text.json`;
 
-  let pdfUploaded = false;
+  await setDoc(reportRef, {
+    ownerId,
+    company: { name: input.companyName, reportType: input.reportType },
+    file: {
+      originalName: input.file.name,
+      storagePath: pdfPath,
+      mimeType: input.file.type || "application/pdf",
+      sizeBytes: input.file.size,
+      pageCount: input.pageCount,
+    },
+    extraction: {
+      storagePath: extractionPath,
+      // Keeps Canvas reopening independent from Storage downloads. The PDF and
+      // full extraction are still retained in Storage as the source archive.
+      inlineText: input.extractedText,
+      characterCount: input.extractedText.length,
+      extractedAt: serverTimestamp(),
+    },
+    processing: { status: "uploading", progress: 25 },
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
+
+  const extraction = new Blob([JSON.stringify({ text: input.extractedText }, null, 2)], {
+    type: "application/json",
+  });
+
   try {
-    await uploadBytes(ref(storage, pdfPath), input.file, {
-      contentType: input.file.type || "application/pdf",
-      customMetadata: { reportId: reportRef.id, ownerId },
-    });
-    pdfUploaded = true;
-    await setDoc(reportRef, {
-      ownerId,
-      company: { name: input.companyName, reportType: input.reportType },
-      file: {
-        originalName: input.file.name,
-        storagePath: pdfPath,
-        mimeType: input.file.type || "application/pdf",
-        sizeBytes: input.file.size,
-        pageCount: input.pageCount,
-      },
-      processing: { status: "uploaded", progress: 45 },
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
+    await Promise.all([
+      uploadBytes(ref(storage, pdfPath), input.file, {
+        contentType: input.file.type || "application/pdf",
+        customMetadata: { reportId: reportRef.id, ownerId },
+      }),
+      uploadBytes(ref(storage, extractionPath), extraction, {
+        contentType: "application/json",
+        customMetadata: { reportId: reportRef.id, ownerId },
+      }),
+    ]);
   } catch (error) {
-    if (pdfUploaded) await deleteObject(ref(storage, pdfPath)).catch(() => undefined);
-    throw new Error(storageUploadErrorMessage(error));
+    const message = storageUploadErrorMessage(error);
+    await updateDoc(reportRef, {
+      processing: { status: "failed", progress: 100, error: message, failedAt: serverTimestamp() },
+      updatedAt: serverTimestamp(),
+    }).catch(() => undefined);
+    throw new Error(message);
   }
+
+  await updateDoc(reportRef, {
+    processing: { status: "uploaded", progress: 45 },
+    updatedAt: serverTimestamp(),
+  });
   return reportRef.id;
 }
 
@@ -129,22 +147,32 @@ export async function markReportEvaluating(reportId: string | null) {
 export async function storeEvaluation(input: {
   reportId: string | null;
   result: BMCResult;
-  settings?: unknown;
+  settings: RiskSettings;
 }) {
   if (!db || !input.reportId) return null;
-  await updateDoc(doc(db, "reports", input.reportId), {
+  const evaluationRef = doc(collection(db, "reports", input.reportId, "evaluations"));
+
+  await setDoc(evaluationRef, {
+    reportId: input.reportId,
+    model: { provider: "groq", modelName: "groq-chat-completions", promptVersion: "bmc-v1" },
     result: input.result,
+    settings: input.settings,
+    isSimulated: input.result.isSimulated,
+    createdAt: serverTimestamp(),
+  });
+  await updateDoc(doc(db, "reports", input.reportId), {
+    latestEvaluationId: evaluationRef.id,
     isSimulated: input.result.isSimulated,
     processing: { status: "completed", progress: 100, completedAt: serverTimestamp() },
     updatedAt: serverTimestamp(),
   });
-  return input.reportId;
+  return evaluationRef.id;
 }
 
 export async function markReportFailed(reportId: string | null, message: string) {
   if (!db || !reportId) return;
   await updateDoc(doc(db, "reports", reportId), {
-    processing: { status: "failed", progress: 100, error: message },
+    processing: { status: "failed", progress: 100, error: message, completedAt: serverTimestamp() },
     updatedAt: serverTimestamp(),
   });
 }
@@ -161,7 +189,15 @@ export async function listStoredReports(): Promise<StoredReportSummary[]> {
   const ownerId = await ensureAnonymousUser();
   if (!ownerId) return [];
 
-  const snapshot = await getDocs(query(collection(db, "reports"), where("ownerId", "==", ownerId)));
+  // Group-project mode: show reports already saved by teammates too.
+  // If deployed Firebase rules still restrict reads to ownerId, fall back to
+  // the current browser user so the page does not break.
+  let snapshot;
+  try {
+    snapshot = await getDocs(collection(db, "reports"));
+  } catch {
+    snapshot = await getDocs(query(collection(db, "reports"), where("ownerId", "==", ownerId)));
+  }
 
   return snapshot.docs
     .map((reportDoc) => {
@@ -173,10 +209,8 @@ export async function listStoredReports(): Promise<StoredReportSummary[]> {
         originalName: data.file?.originalName ?? "report.pdf",
         sizeBytes: data.file?.sizeBytes ?? 0,
         pageCount: data.file?.pageCount ?? 0,
-        status: data.result ? "completed" : (data.processing?.status ?? "uploaded"),
+        status: data.processing?.status ?? "uploaded",
         isSimulated: data.isSimulated,
-        hasWorkforceScan: Boolean(data.workforceScan),
-        hasGovernanceScan: Boolean(data.governanceScan),
         comparisonCompanyName: data.comparisonCompanyName,
         createdAt: asDate(data.createdAt),
         updatedAt: asDate(data.updatedAt),
@@ -196,33 +230,34 @@ export async function loadStoredReport(reportId: string): Promise<StoredReportDe
   const data = snapshot.data();
   const canManage = data.ownerId === ownerId;
 
-  const result = (data.result as BMCResult | undefined) ?? null;
-  const workforceScan = (data.workforceScan as StoredWorkforceScan | undefined) ?? null;
-  const governanceScan = (data.governanceScan as StoredGovernanceScan | undefined) ?? null;
+  let result: BMCResult | null = null;
+  if (data.latestEvaluationId) {
+    const evaluation = await getDoc(
+      doc(db, "reports", reportId, "evaluations", data.latestEvaluationId),
+    );
+    if (evaluation.exists()) result = (evaluation.data().result as BMCResult | undefined) ?? null;
+  }
 
   let comparisonResult: BMCResult | null = null;
   let competitorOverview: CompetitorOverviewResult | null = null;
   let comparisonOriginalName: string | undefined;
-  if (data.comparison) {
-    comparisonResult = (data.comparison.result as BMCResult | undefined) ?? null;
+  const comparison = await getDoc(doc(db, "reports", reportId, "comparisons", "current"));
+  if (comparison.exists()) {
+    const comparisonData = comparison.data();
+    comparisonResult = (comparisonData.result as BMCResult | undefined) ?? null;
     competitorOverview =
-      (data.comparison.competitorOverview as CompetitorOverviewResult | undefined) ?? null;
-    comparisonOriginalName = data.comparison.originalName;
+      (comparisonData.competitorOverview as CompetitorOverviewResult | undefined) ?? null;
+    comparisonOriginalName = comparisonData.originalName;
   }
 
-  // Re-extract the PDF text when EITHER analysis is missing. A completed Canvas
-  // contains everything needed to redraw itself, but the AI Workforce lens scans
-  // the source text directly, so a report with a canvas and no workforce scan
-  // still needs its text back. An unrelated Storage timeout should not block the
-  // user either way.
-  let extractedText = "";
-  if ((!result || !workforceScan || !governanceScan) && data.file?.storagePath) {
+  // A completed Canvas already contains everything needed to reopen it, so do
+  // not let an unrelated Storage timeout block the user.
+  let extractedText = data.extraction?.inlineText ?? "";
+  if (!result && !extractedText && data.extraction?.storagePath) {
     try {
-      const bytes = await getBytes(ref(storage, data.file.storagePath), MAX_REPORT_BYTES);
-      const file = new File([bytes], data.file.originalName ?? "report.pdf", {
-        type: data.file.mimeType ?? "application/pdf",
-      });
-      extractedText = await extractTextFromPdf(file);
+      const bytes = await getBytes(ref(storage, data.extraction.storagePath), 25 * 1024 * 1024);
+      const decoded = JSON.parse(new TextDecoder().decode(bytes)) as { text?: string };
+      extractedText = decoded.text ?? "";
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code !== "storage/retry-limit-exceeded") throw error;
@@ -236,14 +271,12 @@ export async function loadStoredReport(reportId: string): Promise<StoredReportDe
     originalName: data.file?.originalName ?? "report.pdf",
     sizeBytes: data.file?.sizeBytes ?? 0,
     pageCount: data.file?.pageCount ?? 0,
-    status: result ? "completed" : "uploaded",
+    status: data.processing?.status ?? "uploaded",
     isSimulated: result?.isSimulated,
     createdAt: asDate(data.createdAt),
     updatedAt: asDate(data.updatedAt),
     extractedText,
     result,
-    workforceScan,
-    governanceScan,
     comparisonResult,
     competitorOverview,
     comparisonOriginalName,
@@ -258,12 +291,18 @@ export async function storeReportComparison(input: {
   competitorOverview?: CompetitorOverviewResult | null;
 }) {
   if (!db || !input.reportId) return;
-  await updateDoc(doc(db, "reports", input.reportId), {
-    comparison: {
+  await setDoc(
+    doc(db, "reports", input.reportId, "comparisons", "current"),
+    {
       result: input.result,
+      companyName: input.result.companyName,
       originalName: input.originalName ?? "comparison.pdf",
       competitorOverview: input.competitorOverview ?? null,
+      updatedAt: serverTimestamp(),
     },
+    { merge: true },
+  );
+  await updateDoc(doc(db, "reports", input.reportId), {
     comparisonCompanyName: input.result.companyName,
     updatedAt: serverTimestamp(),
   });
@@ -275,12 +314,15 @@ export async function renameStoredReport(reportId: string, companyName: string) 
   const snapshot = await getDoc(reportRef);
   if (!snapshot.exists()) throw new Error("The report no longer exists.");
   const data = snapshot.data();
-  const changes: Record<string, unknown> = {
+  await updateDoc(reportRef, {
     "company.name": companyName.trim(),
     updatedAt: serverTimestamp(),
-  };
-  if (data.result) changes["result.companyName"] = companyName.trim();
-  await updateDoc(reportRef, changes);
+  });
+  if (data.latestEvaluationId) {
+    await updateDoc(doc(db, "reports", reportId, "evaluations", data.latestEvaluationId), {
+      "result.companyName": companyName.trim(),
+    });
+  }
 }
 
 export async function deleteStoredReport(reportId: string) {
@@ -291,7 +333,11 @@ export async function deleteStoredReport(reportId: string) {
   if (!snapshot.exists()) return;
   const data = snapshot.data();
 
-  const storagePaths = [data.file?.storagePath].filter(
+  const evaluations = await getDocs(collection(db, "reports", reportId, "evaluations"));
+  await Promise.all(evaluations.docs.map((evaluation) => deleteDoc(evaluation.ref)));
+  await deleteDoc(doc(db, "reports", reportId, "comparisons", "current")).catch(() => undefined);
+
+  const storagePaths = [data.file?.storagePath, data.extraction?.storagePath].filter(
     (path): path is string => typeof path === "string" && path.length > 0,
   );
   await Promise.all(
