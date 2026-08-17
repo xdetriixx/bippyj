@@ -45,10 +45,6 @@ import {
   Settings2,
   Filter,
   X,
-  Bookmark,
-  Download,
-  Upload,
-  Save,
   Check,
   Circle,
 } from "lucide-react";
@@ -114,18 +110,6 @@ const SOCIAL_PLATFORMS = new Set<string>(SOURCES);
 const isSocialPlatform = (slug: string) => SOCIAL_PLATFORMS.has(slug);
 const DEFAULT_PLATFORMS: string[] = ["reddit", "x", "youtube"];
 const PLATFORMS_STORAGE_KEY = "sw.platforms.v10-socialcrawl";
-
-const WATCHLISTS_STORAGE_KEY = "sw.watchlists.v1";
-
-interface Watchlist {
-  id: string;
-  name: string;
-  company: string;
-  products: string[];
-  platforms: string[];
-  esg: ScanEsg[];
-  createdAt: string;
-}
 
 // Per-platform volume bounds — total scan caps scale with platforms selected
 const PER_PLATFORM_MIN = 10;
@@ -303,27 +287,6 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
     }
   }, [platforms]);
 
-  // Watchlists — persisted bundles of scan settings
-  const [watchlists, setWatchlists] = useState<Watchlist[]>([]);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(WATCHLISTS_STORAGE_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) setWatchlists(parsed);
-      }
-    } catch {
-      /* ignore */
-    }
-  }, []);
-  useEffect(() => {
-    try {
-      localStorage.setItem(WATCHLISTS_STORAGE_KEY, JSON.stringify(watchlists));
-    } catch {
-      /* ignore */
-    }
-  }, [watchlists]);
-
   // Scan form state
   const [scanPlatforms, setScanPlatforms] = useState<string[]>([...DEFAULT_PLATFORMS]);
   const [scanEsg, setScanEsg] = useState<ScanEsg[]>(["environmental", "social", "governance"]);
@@ -387,43 +350,6 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
   };
   const removeProduct = (v: string) =>
     setScanProducts((prev) => prev.filter((p) => p !== v));
-
-  // Watchlist helpers
-  const saveWatchlist = (name: string): boolean => {
-    const trimmed = name.trim();
-    if (!trimmed || !companyValid || scanPlatforms.length === 0 || scanEsg.length === 0) {
-      return false;
-    }
-    if (watchlists.some((w) => w.name.toLowerCase() === trimmed.toLowerCase())) {
-      return false;
-    }
-    const wl: Watchlist = {
-      id: `wl_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      name: trimmed,
-      company: company.trim(),
-      products: [...scanProducts],
-      platforms: [...scanPlatforms],
-      esg: [...scanEsg],
-      createdAt: new Date().toISOString(),
-    };
-    setWatchlists((prev) => [wl, ...prev]);
-    return true;
-  };
-  const deleteWatchlist = (id: string) =>
-    setWatchlists((prev) => prev.filter((w) => w.id !== id));
-  const loadWatchlist = (w: Watchlist) => {
-    // Company is no longer restorable from a watchlist — it always tracks
-    // the currently parsed report, not a saved value.
-    setScanProducts([...w.products]);
-    // Add any missing platforms to master list, then select them
-    setPlatforms((prev) => {
-      const merged = [...prev];
-      for (const p of w.platforms) if (!merged.includes(p)) merged.push(p);
-      return merged;
-    });
-    setScanPlatforms([...w.platforms]);
-    setScanEsg([...w.esg]);
-  };
 
   // Dashboard filters
   const [dashPlatforms, setDashPlatforms] = useState<string[]>([]);
@@ -790,10 +716,6 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
             addProduct={addProduct}
             validateProduct={validateProduct}
             removeProduct={removeProduct}
-            watchlists={watchlists}
-            saveWatchlist={saveWatchlist}
-            deleteWatchlist={deleteWatchlist}
-            loadWatchlist={loadWatchlist}
           />
         )}
 
@@ -1662,10 +1584,6 @@ function ScanView(props: {
   addProduct: (v: string) => string | null;
   validateProduct: (v: string) => string | null;
   removeProduct: (v: string) => void;
-  watchlists: Watchlist[];
-  saveWatchlist: (name: string) => boolean;
-  deleteWatchlist: (id: string) => void;
-  loadWatchlist: (w: Watchlist) => void;
 }) {
   const {
     platforms,
@@ -1702,10 +1620,6 @@ function ScanView(props: {
     addProduct,
     validateProduct,
     removeProduct,
-    watchlists,
-    saveWatchlist,
-    deleteWatchlist,
-    loadWatchlist,
   } = props;
   const [newProduct, setNewProduct] = useState("");
   const [productError, setProductError] = useState<string | null>(null);
@@ -1766,14 +1680,6 @@ function ScanView(props: {
   })();
 
   return (
-    <>
-    <WatchlistsCard
-      watchlists={watchlists}
-      saveWatchlist={saveWatchlist}
-      deleteWatchlist={deleteWatchlist}
-      loadWatchlist={loadWatchlist}
-      canSave={companyValid && scanPlatforms.length > 0 && scanEsg.length > 0 && !scanning}
-    />
     <Card>
       <CardContent className="pt-6 space-y-5">
         <div className="text-center space-y-1">
@@ -2246,204 +2152,6 @@ function ScanView(props: {
             </>
           )}
         </Button>
-      </CardContent>
-    </Card>
-    </>
-  );
-}
-
-// ---------- Watchlists ----------
-function watchlistToCsv(w: Watchlist): string {
-  const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
-  const created = (() => {
-    const d = new Date(w.createdAt);
-    return Number.isFinite(d.getTime()) ? d.toLocaleString() : w.createdAt;
-  })();
-  const rows: string[][] = [
-    ["Field", "Value"],
-    ["Name", w.name],
-    ["Company", w.company],
-    ["Created at", created],
-    ["Platforms", w.platforms.join(", ")],
-    ["ESG categories", w.esg.join(", ")],
-    ["Keywords", w.products.join(", ")],
-  ];
-  // Prepend BOM so Excel opens UTF-8 cleanly; CRLF line endings for spreadsheet apps.
-  return "\ufeff" + rows.map((r) => r.map(esc).join(",")).join("\r\n") + "\r\n";
-}
-
-
-function downloadFile(filename: string, content: string, mime: string) {
-  const blob = new Blob([content], { type: mime });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function sanitizeFilename(s: string) {
-  return s.replace(/[^a-z0-9-_]+/gi, "_").slice(0, 40) || "watchlist";
-}
-
-function WatchlistsCard({
-  watchlists,
-  saveWatchlist,
-  deleteWatchlist,
-  loadWatchlist,
-  canSave,
-}: {
-  watchlists: Watchlist[];
-  saveWatchlist: (name: string) => boolean;
-  deleteWatchlist: (id: string) => void;
-  loadWatchlist: (w: Watchlist) => void;
-  canSave: boolean;
-}) {
-  const [name, setName] = useState("");
-  const [error, setError] = useState<string | null>(null);
-
-  const handleSave = () => {
-    if (!canSave) {
-      setError("Fill company, platforms and at least one ESG category first.");
-      return;
-    }
-    const trimmed = name.trim();
-    if (trimmed.length < 2) {
-      setError("Name must be at least 2 characters.");
-      return;
-    }
-    if (trimmed.length > 40) {
-      setError("Name must be 40 characters or fewer.");
-      return;
-    }
-    const ok = saveWatchlist(trimmed);
-    if (!ok) {
-      setError("A watchlist with that name already exists.");
-      return;
-    }
-    setName("");
-    setError(null);
-  };
-
-  const exportAllJson = () => {
-    downloadFile(
-      `watchlists_${new Date().toISOString().slice(0, 10)}.json`,
-      JSON.stringify(watchlists, null, 2),
-      "application/json",
-    );
-  };
-
-  const exportOneCsv = (w: Watchlist) => {
-    downloadFile(`${sanitizeFilename(w.name)}.csv`, watchlistToCsv(w), "text/csv");
-  };
-
-  return (
-    <Card>
-      <CardContent className="pt-5 pb-4 space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Bookmark className="size-4 text-primary" />
-            <p className="text-sm font-semibold">Watchlists</p>
-            {watchlists.length > 0 && (
-              <Badge variant="secondary" className="text-[10px]">
-                {watchlists.length}
-              </Badge>
-            )}
-          </div>
-          {watchlists.length > 0 && (
-            <button
-              type="button"
-              onClick={exportAllJson}
-              className="text-[11px] text-primary flex items-center gap-1"
-            >
-              <Upload className="size-3" /> Export all
-            </button>
-          )}
-        </div>
-
-        <p className="text-[11px] text-muted-foreground">
-          Save the current scan setup as a reusable watchlist. Export to CSV or JSON.
-        </p>
-
-        <div className="space-y-1">
-          <div className="flex gap-2">
-            <Input
-              value={name}
-              onChange={(e) => {
-                setName(e.target.value);
-                if (error) setError(null);
-              }}
-              placeholder="Name this watchlist (e.g. Q3 ESG)"
-              maxLength={40}
-              className={`h-9 ${error ? "border-destructive" : ""}`}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  handleSave();
-                }
-              }}
-            />
-            <Button type="button" size="sm" onClick={handleSave} className="gap-1 h-9">
-              <Save className="size-4" /> Save
-            </Button>
-          </div>
-          {error && <p className="text-[11px] text-destructive">{error}</p>}
-        </div>
-
-        {watchlists.length === 0 ? (
-          <p className="text-[11px] text-muted-foreground italic">No watchlists yet.</p>
-        ) : (
-          <div className="space-y-1.5">
-            {watchlists.map((w) => (
-              <div
-                key={w.id}
-                className="rounded-lg border border-border bg-muted/30 p-2.5 space-y-1.5"
-              >
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-medium truncate">{w.name}</p>
-                    <p className="text-[11px] text-muted-foreground truncate">
-                      {w.company} · {w.platforms.length} platform
-                      {w.platforms.length === 1 ? "" : "s"} ·{" "}
-                      {w.products.length} product{w.products.length === 1 ? "" : "s"}
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => deleteWatchlist(w.id)}
-                    className="text-muted-foreground hover:text-destructive shrink-0"
-                    aria-label={`Delete ${w.name}`}
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
-                </div>
-                <div className="flex gap-1.5">
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    className="h-7 text-[11px] flex-1 gap-1"
-                    onClick={() => loadWatchlist(w)}
-                  >
-                    Load
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="h-7 text-[11px] gap-1"
-                    onClick={() => exportOneCsv(w)}
-                  >
-                    <Download className="size-3" /> CSV
-                  </Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
       </CardContent>
     </Card>
   );
