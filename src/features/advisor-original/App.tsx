@@ -6,7 +6,7 @@ import {
   Search, Share2, Globe, RefreshCw, Send, CheckCircle, X, ChevronRight, Sparkles,
   HelpCircle, MessageSquare, Info, ShieldAlert, Award, Play, AlertTriangle,
   ChevronDown, ChevronUp, TrendingUp, History, FolderOpen, UserRound,
-  Mail, BriefcaseBusiness, LogOut, Radar
+  Mail, BriefcaseBusiness, LogOut
 } from 'lucide-react';
 import { AdvisorMetrics, BMCPoint, BMCResult, PastYearCompareResult, CompetitorOverviewResult } from './types';
 import { PRELOADED_REPORTS } from './preloadedData';
@@ -3008,38 +3008,15 @@ export default function App() {
               )}
 
               {/* ==================== INSIGHTS: SOCIAL SCAN ====================
-                  While a report is parsed, SocialScanApp stays mounted (never
-                  conditionally rendered) — it owns all of its scan state
-                  internally via its own useState, unlike the other tabs whose
-                  state lives up in this component. Unmounting it on tab
-                  switch (the `{activeTab === X && (...)}` pattern used
-                  elsewhere) would wipe an in-progress or just-completed scan
-                  every time the advisor taps another tab, so within a given
-                  report it stays in the tree and is hidden with a class
-                  instead. It only actually unmounts when parsedResult itself
-                  changes (a new/cleared report), which is the one case where
-                  resetting the scan is correct — the company driving it just
-                  changed. Company is not typed in here; it comes solely from
-                  the report's AI-extracted companyName. */}
+                  Always mounted (never conditionally rendered) — SocialScanApp
+                  owns all of its scan state internally via its own useState,
+                  unlike the other tabs whose state lives up in this component.
+                  Unmounting it on tab switch (the `{activeTab === X && (...)}`
+                  pattern used elsewhere) would wipe an in-progress or just-
+                  completed scan every time the advisor taps another tab. So
+                  this stays in the tree and is hidden with a class instead. */}
               <div className={activeTab === 'insights' && insightsView === 'social' ? "space-y-4 animate-fade-in" : "hidden"}>
-                {parsedResult ? (
-                  <SocialScanApp embedded company={parsedResult.companyName} />
-                ) : (
-                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center shadow-3xs">
-                    <Radar className="mx-auto h-9 w-9 text-slate-300" />
-                    <h3 className="mt-3 text-[11px] font-black uppercase tracking-widest text-slate-700">Upload a report first</h3>
-                    <p className="mx-auto mt-1 max-w-xs text-[10px] leading-relaxed text-slate-500">
-                      Social Scan needs a company name from the active annual report before it can search for it.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => setActiveTab('reports')}
-                      className="mt-4 rounded-lg bg-slate-900 px-3.5 py-2 text-[9px] font-black uppercase tracking-wider text-white"
-                    >
-                      Go to Reports
-                    </button>
-                  </div>
-                )}
+                <SocialScanApp embedded />
               </div>
 
               {/* ==================== INSIGHTS: AI GOVERNANCE CHECKER ==================== */}

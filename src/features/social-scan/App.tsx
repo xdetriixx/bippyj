@@ -259,7 +259,7 @@ function addDays(date: string, days: number) {
   return d.toISOString().slice(0, 10);
 }
 
-function Dashboard({ embedded = false, company }: { embedded?: boolean; company: string }) {
+function Dashboard({ embedded = false }: { embedded?: boolean } = {}) {
   // Scan-first: user must scan before dashboard appears
   const [hasScanned, setHasScanned] = useState(false);
   const [view, setView] = useState<"dashboard" | "scan">("scan");
@@ -295,6 +295,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
   const [scanTo, setScanTo] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
+  const [scanCompany, setScanCompany] = useState("");
   const [scanProducts, setScanProducts] = useState<string[]>([]);
 
   const [lastScan, setLastScan] = useState<{
@@ -327,7 +328,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
       return "Use letters, numbers, spaces, & . , ' - / + only.";
     return null;
   };
-  const companyError = validateCompany(company);
+  const companyError = validateCompany(scanCompany);
   const companyValid = companyError === null;
 
   const validateProduct = (raw: string): string | null => {
@@ -445,7 +446,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
     try {
       const raw = await scanRealPostsFn({
         data: {
-          company: company.trim(),
+          company: scanCompany.trim(),
           products: scanProducts,
           platforms: scanPlatforms,
           esg: scanEsg,
@@ -514,7 +515,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
         const sentiment = scoreVader(englishText).compound;
         return {
           id: p.id || `rp_${i}`,
-          company: company.trim(),
+          company: scanCompany.trim(),
           product: p.product,
           source: p.source,
           author: p.author,
@@ -559,7 +560,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
         esg: [...scanEsg],
         postsIngested: scored.length,
         rawPostsIngested: raw.length,
-        company: company.trim(),
+        company: scanCompany.trim(),
         products: [...scanProducts],
         from: scanFrom,
         to: scanTo,
@@ -571,7 +572,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
         postCountByProduct.set(p.product, (postCountByProduct.get(p.product) ?? 0) + 1);
       }
       const insights = generateAlerts(scored).map((alert) => ({
-        company: company.trim(),
+        company: scanCompany.trim(),
         product: alert.product,
         riskScore: alert.riskScore,
         severity: alert.severity,
@@ -709,7 +710,8 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
             scanError={scanError}
             sourceBreakdown={sourceBreakdown}
             hasScanned={hasScanned}
-            company={company}
+            scanCompany={scanCompany}
+            setScanCompany={setScanCompany}
             companyValid={companyValid}
             companyError={companyError}
             scanProducts={scanProducts}
@@ -743,7 +745,7 @@ function Dashboard({ embedded = false, company }: { embedded?: boolean; company:
             {
               ok: companyValid,
               label: "Company",
-              value: company.trim() || "Not set",
+              value: scanCompany.trim() || "Not set",
               required: true,
             },
             {
@@ -1577,7 +1579,8 @@ function ScanView(props: {
   scanError: string | null;
   sourceBreakdown: { source: string; raw: number; kept: number }[] | null;
   hasScanned: boolean;
-  company: string;
+  scanCompany: string;
+  setScanCompany: (v: string) => void;
   companyValid: boolean;
   companyError: string | null;
   scanProducts: string[];
@@ -1613,7 +1616,8 @@ function ScanView(props: {
     scanError,
     sourceBreakdown,
     hasScanned,
-    company,
+    scanCompany,
+    setScanCompany,
     companyValid,
     companyError,
     scanProducts,
@@ -1690,20 +1694,24 @@ function ScanView(props: {
           </p>
         </div>
 
-        {/* Targets — company (from the parsed report, not editable here) + products */}
+        {/* Targets — company + products */}
         <div className="space-y-1.5">
-          <Label className="text-xs">Company to scan</Label>
-          <div
-            className={`flex min-h-9 items-center rounded-md border px-3 py-2 text-sm ${
-              companyValid ? "border-input bg-muted/40" : "border-destructive"
-            }`}
-            aria-invalid={!companyValid}
+          <Label htmlFor="scan-company" className="text-xs">
+            Company to scan <span className="text-destructive">*</span>
+          </Label>
+          <Input
+            id="scan-company"
+            value={scanCompany}
+            onChange={(e) => setScanCompany(e.target.value)}
+            onBlur={(e) => setScanCompany(e.target.value.replace(/\s+/g, " ").trim())}
+            placeholder="Company name"
+            disabled={scanning}
+            maxLength={60}
+            aria-invalid={scanCompany.length > 0 && !companyValid}
             aria-describedby="scan-company-error"
-          >
-            {company.trim() || <span className="text-muted-foreground">No company extracted from report</span>}
-          </div>
-          <p className="text-[11px] text-muted-foreground">Extracted from the report uploaded in Reports.</p>
-          {!companyValid && companyError && (
+            className={scanCompany.length > 0 && !companyValid ? "border-destructive" : ""}
+          />
+          {scanCompany.length > 0 && companyError && (
             <p id="scan-company-error" className="text-[11px] text-destructive">
               {companyError}
             </p>
