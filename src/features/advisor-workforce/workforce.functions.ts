@@ -8,11 +8,11 @@ import { statusFromScore, type WorkforceScanResult, type WorkforceStatus } from 
  * ------------------------------------------------------------------
  * AI Workforce Transition Tracker scan. Deliberately mirrors the
  * structure of advisor.functions.ts so both features read the same
- * way: same Groq helper, same zod validators, same compression pass,
+ * way: same shared OpenAI helper, same zod validators, same compression pass,
  * same { status, result } return shape.
  *
  * Ported from backend/ai_scanner.py in the standalone Flask build.
- * There is no OpenAI call and no separate API key. The report text
+ * The scan uses the configured gpt-5-mini provider. The report text
  * arrives already extracted client side by utils/pdf.ts, so there is
  * no upload route either.
  * ------------------------------------------------------------------
@@ -192,7 +192,7 @@ ${compressedReport}`;
     );
 
     if (!parsed || typeof parsed !== "object") {
-      throw new Error("Groq returned no workforce scan data. Please try again with a clearer PDF.");
+      throw new Error("OpenAI returned no workforce scan data. Please try again with a clearer PDF.");
     }
 
     return {

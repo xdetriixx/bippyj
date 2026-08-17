@@ -1,10 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate } from '@tanstack/react-router';
 import {
   Building2, Bot, AlertCircle, Scale, Layers, Smartphone, Battery, Wifi,
   Signal, Sliders, ChevronLeft, Plus, Trash2, Edit3, Download, ArrowRight,
   Search, Share2, Globe, RefreshCw, Send, CheckCircle, X, ChevronRight, Sparkles,
   HelpCircle, MessageSquare, Info, ShieldAlert, Award, Play, AlertTriangle,
-  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen, Radar
+  ChevronDown, ChevronUp, TrendingUp, History, FolderOpen, UserRound,
+  Mail, BriefcaseBusiness, LogOut
 } from 'lucide-react';
 import { AdvisorMetrics, BMCPoint, BMCResult, PastYearCompareResult, CompetitorOverviewResult } from './types';
 import { PRELOADED_REPORTS } from './preloadedData';
@@ -29,6 +31,7 @@ import {
   compareCompetitorsOverview,
   comparePastYear,
   parseBmc,
+  scanGovernanceReport,
 } from './advisor.functions';
 import SocialScanApp from "@/features/social-scan/App";
 import WorkforcePanel from "@/features/advisor-workforce/WorkforcePanel";
@@ -38,14 +41,29 @@ import WorkforceThresholdCard, {
   buildThresholdInstruction,
   type WorkforceThresholds,
 } from "@/features/advisor-workforce/WorkforceThresholdCard";
+import { useAuth } from '@/lib/auth';
+import { storeGovernanceScan } from './governancePersistence';
 
 
-
+interface GovPillar { name: string; score: number; }
+interface GovFlag { severity: 'critical' | 'moderate'; title: string; description: string; source: string; }
+interface GovCompany {
+  id: string; name: string; ticker: string; initials: string;
+  score: number; policy: string; pages: number; lastScanned: string;
+  trendDelta: number; riskLabel: string;
+  pillars: GovPillar[]; flags: GovFlag[];
+}
 
 export default function App() {
+  const navigate = useNavigate();
+  const { profile, signOut } = useAuth();
+
   // Mobile app sub-navigation states
-  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'history' | 'settings' | 'social-scan'>('reports');
+  const [activeTab, setActiveTab] = useState<'reports' | 'canvas' | 'compare' | 'insights' | 'profile'>('reports');
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const [insightsView, setInsightsView] = useState<'workforce' | 'governance' | 'social'>('workforce');
+  const [profileSection, setProfileSection] = useState<'history' | 'rules' | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   // Simulated device hardware features
   const [isPowerOn, setIsPowerOn] = useState<boolean>(true);
@@ -113,7 +131,7 @@ export default function App() {
   const [isSearchingPastYear, setIsSearchingPastYear] = useState<boolean>(false);
   const [pastYearResult, setPastYearResult] = useState<PastYearCompareResult | null>(null);
   const [pastYearError, setPastYearError] = useState<string | null>(null);
-  const [canvasView, setCanvasView] = useState<'bmc' | 'temporal' | 'workforce'>('bmc');
+  const [canvasView, setCanvasView] = useState<'bmc' | 'temporal'>('bmc');
   const isViewingTemporal = canvasView === 'temporal';
   const setIsViewingTemporal = (value: boolean) => setCanvasView(value ? 'temporal' : 'bmc');
   const [selectedVarianceBlockId, setSelectedVarianceBlockId] = useState<string | null>(null);
@@ -143,6 +161,100 @@ export default function App() {
     riskDescription: ''
   });
 
+  // AI Governance Checker state
+  const [govReasoningOpen, setGovReasoningOpen] = useState<boolean>(false);
+  const [govReasoningLoading, setGovReasoningLoading] = useState<boolean>(false);
+  const [govReasoningResult, setGovReasoningResult] = useState<{
+    summary: string;
+    checks: { found: boolean; text: string }[];
+    improvements: string[];
+  } | null>(null);
+  const [govReasoningError, setGovReasoningError] = useState<string | null>(null);
+  const [govPdfCompany, setGovPdfCompany] = useState<GovCompany | null>(null);
+  const [isScanningGovernance, setIsScanningGovernance] = useState(false);
+  const [govScanError, setGovScanError] = useState<string | null>(null);
+
+  // A newly selected report requires its own evidence-based governance scan.
+  useEffect(() => {
+    const expectedId = reportId ? `report-${reportId}` : null;
+    if (govPdfCompany?.id === expectedId) return;
+    setGovPdfCompany(null);
+    setGovReasoningOpen(false);
+    setGovReasoningResult(null);
+    setGovReasoningError(null);
+    setGovScanError(null);
+  }, [reportId]);
+
+  const runGovernancePdfScan = async () => {
+    if (!pdfMeta || customText.trim().length < 50 || isScanningGovernance) return;
+    setIsScanningGovernance(true);
+    setGovScanError(null);
+    setGovReasoningOpen(false);
+    setGovReasoningResult(null);
+    setGovReasoningError(null);
+
+    try {
+      const markerPageCount = (customText.match(/\[PAGE \d+\]/gi) ?? []).length;
+      const pageCount = pdfMeta?.pages || markerPageCount;
+      const response = await scanGovernanceReport({
+        data: {
+          companyName: parsedResult?.companyName || companyName || 'Uploaded Company',
+          reportType: parsedResult?.reportType || reportType || 'Uploaded PDF Statement',
+          sourceText: customText,
+          pageCount,
+        },
+      });
+      const scan = response.result;
+      const scannedCompanyName = parsedResult?.companyName || companyName || 'Uploaded Company';
+      const governanceRecordId = reportId ? `report-${reportId}` : `report-${pdfMeta.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase()}`;
+      const pdfCompany: GovCompany = {
+        id: governanceRecordId,
+        name: scannedCompanyName,
+        ticker: parsedResult?.reportType || reportType || 'Uploaded PDF Statement',
+        initials: scannedCompanyName.slice(0, 2).toUpperCase() || 'UC',
+        score: scan.score,
+        policy: scan.policy,
+        pages: pageCount,
+        lastScanned: new Date().toLocaleDateString('en-SG', { month: 'short', year: 'numeric' }),
+        trendDelta: 0,
+        riskLabel: scan.riskLabel,
+        pillars: scan.pillars,
+        flags: scan.flags,
+      };
+      const reasoning = {
+        summary: scan.summary,
+        checks: scan.checks,
+        improvements: scan.improvements,
+      };
+
+      setGovPdfCompany(pdfCompany);
+      setGovReasoningResult(reasoning);
+      const savedGovernanceReportId = await storeGovernanceScan({
+        reportId,
+        result: {
+          score: scan.score,
+          policy: scan.policy,
+          riskLabel: scan.riskLabel,
+          pages: pageCount,
+          pillars: scan.pillars,
+          flags: scan.flags,
+          reasoning,
+          scannedAt: new Date().toISOString(),
+        },
+      }).catch(() => null);
+      if (savedGovernanceReportId) {
+        setStoredReports((current) => current.map((item) => (
+          item.id === savedGovernanceReportId ? { ...item, hasGovernanceScan: true } : item
+        )));
+      }
+      toast.success('Governance scan completed from the uploaded PDF.');
+    } catch (error: any) {
+      setGovScanError(error.message || 'Governance scan failed. Please try again.');
+    } finally {
+      setIsScanningGovernance(false);
+    }
+  };
+
   // Automatic Strategy overview generation when comparison loaded
   useEffect(() => {
     if (parsedResult && comparisonResult) {
@@ -153,8 +265,20 @@ export default function App() {
   }, [parsedResult, comparisonResult]);
 
   useEffect(() => {
-    if (activeTab === 'history') void refreshStoredReports();
-  }, [activeTab]);
+    if (activeTab === 'profile' && profileSection === 'history') void refreshStoredReports();
+  }, [activeTab, profileSection]);
+
+  const leaveWorkspace = async () => {
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+    try {
+      await signOut();
+      await navigate({ to: '/' });
+    } catch (error: any) {
+      toast.error(error.message || 'Unable to sign out. Please try again.');
+      setIsSigningOut(false);
+    }
+  };
 
   const refreshStoredReports = async () => {
     setIsLoadingHistory(true);
@@ -214,6 +338,30 @@ export default function App() {
       });
       setParsedResult(storedResult);
       setLoadedWorkforceScan(stored.workforceScan);
+      if (stored.governanceScan) {
+        const savedGovernance = stored.governanceScan;
+        setGovPdfCompany({
+          id: `report-${stored.id}`,
+          name: stored.companyName,
+          ticker: stored.reportType,
+          initials: stored.companyName.slice(0, 2).toUpperCase() || 'UC',
+          score: savedGovernance.score,
+          policy: savedGovernance.policy,
+          pages: savedGovernance.pages || stored.pageCount,
+          lastScanned: new Date(savedGovernance.scannedAt).toLocaleDateString('en-SG', { month: 'short', year: 'numeric' }),
+          trendDelta: 0,
+          riskLabel: savedGovernance.riskLabel,
+          pillars: savedGovernance.pillars,
+          flags: savedGovernance.flags,
+        });
+        setGovReasoningResult(savedGovernance.reasoning);
+      } else {
+        setGovPdfCompany(null);
+        setGovReasoningResult(null);
+      }
+      setGovReasoningOpen(false);
+      setGovReasoningError(null);
+      setGovScanError(null);
       setComparisonResult(stored.comparisonResult as BMCResult | null);
       setCompetitorOverview(stored.competitorOverview);
       setCompareCompanyName(stored.comparisonResult?.companyName ?? '');
@@ -341,32 +489,32 @@ export default function App() {
       : fallback;
   };
 
-  const mergeGroqMetrics = (fallback: AdvisorMetrics, groqMetrics?: AdvisorMetrics): AdvisorMetrics => {
-    if (!groqMetrics) return fallback;
+  const mergeAiMetrics = (fallback: AdvisorMetrics, aiMetrics?: AdvisorMetrics): AdvisorMetrics => {
+    if (!aiMetrics) return fallback;
     return {
       ...fallback,
-      ...groqMetrics,
-      opportunityScore: usePositiveNumber(groqMetrics.opportunityScore, fallback.opportunityScore),
-      riskScore: usePositiveNumber(groqMetrics.riskScore, fallback.riskScore),
-      highPoints: usePositiveNumber(groqMetrics.highPoints, fallback.highPoints, 0),
-      mediumPoints: usePositiveNumber(groqMetrics.mediumPoints, fallback.mediumPoints, 0),
-      lowPoints: usePositiveNumber(groqMetrics.lowPoints, fallback.lowPoints, 0),
+      ...aiMetrics,
+      opportunityScore: usePositiveNumber(aiMetrics.opportunityScore, fallback.opportunityScore),
+      riskScore: usePositiveNumber(aiMetrics.riskScore, fallback.riskScore),
+      highPoints: usePositiveNumber(aiMetrics.highPoints, fallback.highPoints, 0),
+      mediumPoints: usePositiveNumber(aiMetrics.mediumPoints, fallback.mediumPoints, 0),
+      lowPoints: usePositiveNumber(aiMetrics.lowPoints, fallback.lowPoints, 0),
       operatingLeverage: {
-        revPerEmp: usePositiveNumber(groqMetrics.operatingLeverage?.revPerEmp, fallback.operatingLeverage.revPerEmp, 1_000),
-        staffCostPerEmp: usePositiveNumber(groqMetrics.operatingLeverage?.staffCostPerEmp, fallback.operatingLeverage.staffCostPerEmp, 1_000),
+        revPerEmp: usePositiveNumber(aiMetrics.operatingLeverage?.revPerEmp, fallback.operatingLeverage.revPerEmp, 1_000),
+        staffCostPerEmp: usePositiveNumber(aiMetrics.operatingLeverage?.staffCostPerEmp, fallback.operatingLeverage.staffCostPerEmp, 1_000),
       },
-      techLeveragePercent: usePositiveNumber(groqMetrics.techLeveragePercent, fallback.techLeveragePercent),
-      nicheRevenueGrowth: usePositiveNumber(groqMetrics.nicheRevenueGrowth, fallback.nicheRevenueGrowth),
-      totalRevenueGrowth: usePositiveNumber(groqMetrics.totalRevenueGrowth, fallback.totalRevenueGrowth),
-      infraOverheadPercent: usePositiveNumber(groqMetrics.infraOverheadPercent, fallback.infraOverheadPercent),
-      revenuePerEmployee: usePositiveNumber(groqMetrics.revenuePerEmployee, fallback.revenuePerEmployee, 10_000),
-      fixedCostIntensity: usePositiveNumber(groqMetrics.fixedCostIntensity, fallback.fixedCostIntensity),
-      feeIncomePercent: usePositiveNumber(groqMetrics.feeIncomePercent, fallback.feeIncomePercent),
-      crossBorderRevenueGrowth: usePositiveNumber(groqMetrics.crossBorderRevenueGrowth, fallback.crossBorderRevenueGrowth),
-      staffCostsPercentOfRevenue: usePositiveNumber(groqMetrics.staffCostsPercentOfRevenue, fallback.staffCostsPercentOfRevenue),
-      staffCostsGrowthRate: usePositiveNumber(groqMetrics.staffCostsGrowthRate, fallback.staffCostsGrowthRate),
-      revenueGrowthRate: usePositiveNumber(groqMetrics.revenueGrowthRate, fallback.revenueGrowthRate),
-      transparencySentimentScore: usePositiveNumber(groqMetrics.transparencySentimentScore, fallback.transparencySentimentScore),
+      techLeveragePercent: usePositiveNumber(aiMetrics.techLeveragePercent, fallback.techLeveragePercent),
+      nicheRevenueGrowth: usePositiveNumber(aiMetrics.nicheRevenueGrowth, fallback.nicheRevenueGrowth),
+      totalRevenueGrowth: usePositiveNumber(aiMetrics.totalRevenueGrowth, fallback.totalRevenueGrowth),
+      infraOverheadPercent: usePositiveNumber(aiMetrics.infraOverheadPercent, fallback.infraOverheadPercent),
+      revenuePerEmployee: usePositiveNumber(aiMetrics.revenuePerEmployee, fallback.revenuePerEmployee, 10_000),
+      fixedCostIntensity: usePositiveNumber(aiMetrics.fixedCostIntensity, fallback.fixedCostIntensity),
+      feeIncomePercent: usePositiveNumber(aiMetrics.feeIncomePercent, fallback.feeIncomePercent),
+      crossBorderRevenueGrowth: usePositiveNumber(aiMetrics.crossBorderRevenueGrowth, fallback.crossBorderRevenueGrowth),
+      staffCostsPercentOfRevenue: usePositiveNumber(aiMetrics.staffCostsPercentOfRevenue, fallback.staffCostsPercentOfRevenue),
+      staffCostsGrowthRate: usePositiveNumber(aiMetrics.staffCostsGrowthRate, fallback.staffCostsGrowthRate),
+      revenueGrowthRate: usePositiveNumber(aiMetrics.revenueGrowthRate, fallback.revenueGrowthRate),
+      transparencySentimentScore: usePositiveNumber(aiMetrics.transparencySentimentScore, fallback.transparencySentimentScore),
     };
   };
 
@@ -658,7 +806,7 @@ export default function App() {
       transparencySentimentLabel,
       transparencySentimentInsight
     };
-    return mergeGroqMetrics(fallbackMetrics, result.advisorMetrics);
+    return mergeAiMetrics(fallbackMetrics, result.advisorMetrics);
   };
 
   const getPastYearMetrics = (company: string, targetYr: string, aiMetrics?: PastYearCompareResult['aiMetrics']) => {
@@ -1180,7 +1328,7 @@ export default function App() {
         setChatAnswer(data.answer);
       }
     } catch (err: any) {
-      const errMsg = "AI request failed. Verify GROQ_API_KEY and GROQ_MODEL in .env.local.";
+      const errMsg = "AI request failed. Verify OPENAI_API_KEY and OPENAI_MODEL in .env.local.";
       setChatHistory(prev => [...prev, { q: currentQ, a: errMsg }]);
       setChatAnswer(errMsg);
     } finally {
@@ -1349,7 +1497,7 @@ export default function App() {
         </div>
         <h1 className="text-3xl font-bold text-slate-900 tracking-tight leading-none">Osterwalder Canvas AI</h1>
         <p className="text-xs text-slate-500 leading-relaxed font-sans">
-          This system is optimized exclusively for mobile screens. Use the fully-functional physical mockup on the right to upload files, inspect grading nodes, customize risk parameters, and trigger Groq AI strategy assessments.
+          This system is optimized exclusively for mobile screens. Use the fully-functional physical mockup on the right to upload files, inspect grading nodes, customize risk parameters, and trigger the configured AI strategy assessments.
         </p>
 
         <div className="bg-white border p-4 rounded-xl shadow-3xs space-y-3">
@@ -1517,21 +1665,24 @@ export default function App() {
                             const uploadToast = toast.loading('Reading PDF...');
                             setIsUploadingPdf(true);
                             try {
-                              const text = await extractTextFromPdf(f);
-                              setCustomText(text);
+                               const text = await extractTextFromPdf(f, (progressMessage) => {
+                                 toast.loading(progressMessage, { id: uploadToast });
+                               });
+                               const extractedPageCount = (text.match(/\[PAGE \d+\]/gi) ?? []).length;
+                               setCustomText(text);
                               const name = f.name.split('.')[0].replace(/[_-]/g, ' ');
                               const formattedName = name.charAt(0).toUpperCase() + name.slice(1);
                               const uploadedReportType = 'Uploaded PDF Statement';
                               setCompanyName(formattedName);
                               setReportType(uploadedReportType);
-                              setPdfMeta({ name: f.name, size: `${(f.size / 1024).toFixed(0)} KB` });
+                               setPdfMeta({ name: f.name, size: `${(f.size / 1024).toFixed(0)} KB`, pages: extractedPageCount });
                               toast.loading('Saving PDF to Firebase...', { id: uploadToast });
                               const storedReportId = await storeUploadedReport({
                                 file: f,
                                 companyName: formattedName,
                                 reportType: uploadedReportType,
                                 extractedText: text,
-                                pageCount: 0,
+                                 pageCount: extractedPageCount,
                               });
                               setReportId(storedReportId);
                               toast.success('PDF loaded. You can build the canvas now.', { id: uploadToast });
@@ -1658,23 +1809,7 @@ export default function App() {
                         >
                           Compare past year annual report
                         </button>
-                        <button
-                          onClick={() => { setCanvasView('workforce'); setSelectedBlockId(null); setSelectedVarianceBlockId(null); }}
-                          className={`flex-1 py-1.5 text-center rounded-md cursor-pointer transition-all ${canvasView === 'workforce' ? 'bg-white text-[#F27D26] shadow-3xs' : 'text-slate-400'}`}
-                        >
-                          AI Workforce
-                        </button>
                       </div>
-                      {canvasView === 'workforce' && (
-                        <WorkforcePanel
-                          key={reportId ?? 'unsaved'}
-                          sourceText={customText}
-                          companyName={parsedResult?.companyName || 'Untitled report'}
-                          reportId={reportId}
-                          savedScan={loadedWorkforceScan}
-                          thresholdInstruction={buildThresholdInstruction(workforceThresholds)}
-                        />
-                      )}
                       {/* SUBPANE A: STANDARD CANVAS */}
                       {canvasView === 'bmc' && (
                         <>
@@ -2576,9 +2711,100 @@ export default function App() {
               )}
 
 
-              {/* ==================== TAB 4: CLOUD REPORT HISTORY ==================== */}
-              {activeTab === 'history' && (
+              {/* ==================== TAB 4: PROFILE, HISTORY & RULES ==================== */}
+              {activeTab === 'profile' && profileSection === null && (
+                <section className="space-y-3 animate-fade-in font-sans text-left" aria-labelledby="advisor-profile-title">
+                  <div className="relative overflow-hidden rounded-2xl bg-linear-to-br from-[#F27D26] via-[#ff9d49] to-[#ffc36b] p-4 text-white shadow-sm">
+                    <UserRound className="absolute -right-5 -bottom-6 h-28 w-28 opacity-10" />
+                    <div className="relative flex items-center gap-3">
+                      <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-white/70 bg-white text-base font-black uppercase text-[#F27D26] shadow-sm">
+                        {(profile?.displayName || profile?.email || 'A').trim().charAt(0)}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[8px] font-bold uppercase tracking-[0.2em] text-white/75">Advisor account</p>
+                        <h2 id="advisor-profile-title" className="truncate text-base font-black tracking-tight">
+                          {profile?.displayName || 'Advisor'}
+                        </h2>
+                        <span className="mt-1 inline-flex rounded-full bg-slate-950/15 px-2 py-0.5 text-[8px] font-black uppercase tracking-widest">
+                          {profile?.role || 'advisor'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-3xs">
+                    <div className="flex items-center gap-3 border-b border-slate-100 px-3.5 py-3">
+                      <Mail className="h-4 w-4 shrink-0 text-[#F27D26]" />
+                      <div className="min-w-0">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Email address</p>
+                        <p className="truncate text-[10px] font-bold text-slate-700">{profile?.email || 'No email recorded'}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 px-3.5 py-3">
+                      <BriefcaseBusiness className="h-4 w-4 shrink-0 text-[#F27D26]" />
+                      <div>
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Account role</p>
+                        <p className="text-[10px] font-bold capitalize text-slate-700">{profile?.role || 'Advisor'}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => void leaveWorkspace()}
+                    disabled={isSigningOut}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-[10px] font-black uppercase tracking-widest text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    <LogOut className="h-3.5 w-3.5" />
+                    {isSigningOut ? 'Signing out...' : 'Sign out'}
+                  </button>
+
+                  <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-3xs">
+                    <button
+                      type="button"
+                      onClick={() => setProfileSection('history')}
+                      className={`flex w-full items-center gap-3 border-b border-slate-100 px-3.5 py-3.5 text-left transition ${profileSection === 'history' ? 'bg-orange-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[#F27D26]">
+                        <History className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-800">Past annual reports</span>
+                        <span className="block text-[8.5px] leading-relaxed text-slate-500">Open, rename, or remove saved reports</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setProfileSection('rules')}
+                      className={`flex w-full items-center gap-3 px-3.5 py-3.5 text-left transition ${profileSection === 'rules' ? 'bg-orange-50' : 'hover:bg-slate-50'}`}
+                    >
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-violet-50 text-violet-600">
+                        <Sliders className="h-4 w-4" />
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-slate-800">Audit rules</span>
+                        <span className="block text-[8.5px] leading-relaxed text-slate-500">Configure risk and workforce thresholds</span>
+                      </span>
+                      <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                    </button>
+                  </div>
+                </section>
+              )}
+
+              {activeTab === 'profile' && profileSection === 'history' && (
                 <div className="space-y-4 animate-fade-in font-sans text-left">
+                  <button
+                    type="button"
+                    onClick={() => setProfileSection(null)}
+                    className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500 transition hover:text-[#F27D26]"
+                    aria-label="Back to profile"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Profile
+                  </button>
+
                   <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
                     <History className="absolute -right-3 -bottom-3 w-24 h-24 opacity-10" />
                     <div className="relative space-y-1">
@@ -2658,6 +2884,12 @@ export default function App() {
                                         {stored.isSimulated ? 'Demo result' : 'AI result'}
                                       </span>
                                     )}
+                                    {stored.hasWorkforceScan && (
+                                      <span className="bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded text-[7.5px] font-bold uppercase">Workforce saved</span>
+                                    )}
+                                    {stored.hasGovernanceScan && (
+                                      <span className="bg-orange-50 text-orange-700 px-1.5 py-0.5 rounded text-[7.5px] font-bold uppercase">Governance saved</span>
+                                    )}
                                     <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[7.5px] font-mono">
                                       {stored.createdAt ? stored.createdAt.toLocaleDateString() : 'Recently saved'}
                                     </span>
@@ -2699,7 +2931,83 @@ export default function App() {
               )}
 
 
-              {/* ==================== TAB 6: SOCIAL SCAN ====================
+              {/* ==================== TAB 4: INSIGHTS HUB ==================== */}
+              {activeTab === 'insights' && (
+                <div className="mb-4 space-y-3 animate-fade-in font-sans text-left">
+                  <div className="relative overflow-hidden rounded-2xl bg-slate-900 p-4 text-white shadow-sm">
+                    <Sparkles className="absolute -bottom-4 -right-4 h-24 w-24 opacity-10" />
+                    <div className="relative space-y-1">
+                      <div className="inline-block rounded-sm bg-slate-800 px-2 py-0.5 font-mono text-[8px] font-bold uppercase tracking-widest">
+                        Multi-lens analysis
+                      </div>
+                      <h2 className="text-base font-black tracking-tight">Advisor Insights</h2>
+                      <p className="max-w-xs text-[10px] leading-relaxed text-slate-300">
+                        Examine the active company through workforce, governance, and reputation lenses.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-1 rounded-xl bg-slate-200/70 p-1 font-sans text-[9.5px] font-semibold tracking-normal">
+                    <button
+                      type="button"
+                      onClick={() => setInsightsView('workforce')}
+                      className={`rounded-lg px-1 py-2 transition ${insightsView === 'workforce' ? 'bg-white text-[#F27D26] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      Workforce
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInsightsView('governance')}
+                      className={`rounded-lg px-1 py-2 transition ${insightsView === 'governance' ? 'bg-white text-[#F27D26] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      Governance
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setInsightsView('social')}
+                      className={`rounded-lg px-1 py-2 transition ${insightsView === 'social' ? 'bg-white text-[#F27D26] shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+                    >
+                      Social Scan
+                    </button>
+                  </div>
+
+                  {insightsView === 'workforce' && (
+                    parsedResult ? (
+                      <WorkforcePanel
+                        key={reportId ?? 'unsaved'}
+                        sourceText={customText}
+                        companyName={parsedResult.companyName || 'Untitled report'}
+                        reportId={reportId}
+                        savedScan={loadedWorkforceScan}
+                        thresholdInstruction={buildThresholdInstruction(workforceThresholds)}
+                        onScanSaved={() => {
+                          if (!reportId) return;
+                          setStoredReports((current) => current.map((item) => (
+                            item.id === reportId ? { ...item, hasWorkforceScan: true } : item
+                          )));
+                        }}
+                      />
+                    ) : (
+                      <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center shadow-3xs">
+                        <Bot className="mx-auto h-9 w-9 text-slate-300" />
+                        <h3 className="mt-3 text-[11px] font-black uppercase tracking-widest text-slate-700">Upload a report first</h3>
+                        <p className="mx-auto mt-1 max-w-xs text-[10px] leading-relaxed text-slate-500">
+                          AI Workforce needs the active annual report before it can analyse roles and automation exposure.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab('reports')}
+                          className="mt-4 rounded-lg bg-slate-900 px-3.5 py-2 text-[9px] font-black uppercase tracking-wider text-white"
+                        >
+                          Go to Reports
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              )}
+
+              {/* ==================== INSIGHTS: SOCIAL SCAN ====================
                   Always mounted (never conditionally rendered) — SocialScanApp
                   owns all of its scan state internally via its own useState,
                   unlike the other tabs whose state lives up in this component.
@@ -2707,29 +3015,267 @@ export default function App() {
                   pattern used elsewhere) would wipe an in-progress or just-
                   completed scan every time the advisor taps another tab. So
                   this stays in the tree and is hidden with a class instead. */}
-              <div className={activeTab === 'social-scan' ? "space-y-4 animate-fade-in" : "hidden"}>
-                <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
-                  <div className="absolute -right-3 -bottom-3 opacity-15">
-                    <Radar className="w-24 h-24 text-white" />
-                  </div>
-                  <div className="relative space-y-1">
-                    <div className="bg-slate-800 px-2 py-0.5 text-[8px] tracking-widest font-mono font-bold uppercase rounded-sm inline-block">
-                      Sentiment Watch
-                    </div>
-                    <h2 className="text-base font-bold tracking-tight">Social ESG Scan</h2>
-                    <p className="text-[11px] text-slate-350 leading-relaxed max-w-xs font-sans">
-                      Scan social platforms for a company's ESG/reputation risk and surface the posts driving it.
-                    </p>
-                  </div>
-                </div>
-
+              <div className={activeTab === 'insights' && insightsView === 'social' ? "space-y-4 animate-fade-in" : "hidden"}>
                 <SocialScanApp embedded />
               </div>
 
+              {/* ==================== INSIGHTS: AI GOVERNANCE CHECKER ==================== */}
+              {activeTab === 'insights' && insightsView === 'governance' && !govPdfCompany && (
+                !pdfMeta || customText.trim().length < 50 ? (
+                  <div className="rounded-xl border border-slate-200 bg-white px-5 py-10 text-center shadow-3xs">
+                    <ShieldAlert className="mx-auto h-9 w-9 text-slate-300" />
+                    <h3 className="mt-3 text-[11px] font-black uppercase tracking-widest text-slate-700">Upload a PDF first</h3>
+                    <p className="mx-auto mt-1 max-w-xs text-[10px] leading-relaxed text-slate-500">
+                      AI Governance must read an uploaded annual report before it can assess policies, oversight, transparency, and compliance.
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => setActiveTab('reports')}
+                      className="mt-4 rounded-lg bg-slate-900 px-3.5 py-2 text-[9px] font-black uppercase tracking-wider text-white"
+                    >
+                      Go to Reports
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3 rounded-xl border border-slate-200 bg-white p-4 text-left shadow-3xs">
+                    <div className="flex items-start gap-3">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[#F27D26]">
+                        <ShieldAlert className="h-4.5 w-4.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Active PDF</p>
+                        <h3 className="truncate text-[11px] font-black text-slate-800">{pdfMeta.name}</h3>
+                        <p className="mt-0.5 text-[9px] text-slate-500">
+                          {pdfMeta.pages ? `${pdfMeta.pages} pages · ` : ''}{pdfMeta.size}
+                        </p>
+                      </div>
+                    </div>
+                    <p className="text-[10px] leading-relaxed text-slate-500">
+                      Groq will scan the extracted PDF text for AI policy, accountable ownership, transparency controls, regulatory compliance, and evidence-backed disclosure gaps.
+                    </p>
+                    {govScanError && (
+                      <div className="rounded-lg border border-rose-200 bg-rose-50 p-2.5 text-[9px] leading-relaxed text-rose-700">
+                        {govScanError}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => void runGovernancePdfScan()}
+                      disabled={isScanningGovernance}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg bg-slate-900 px-3 py-2.5 text-[9px] font-black uppercase tracking-wider text-white transition hover:bg-black disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {isScanningGovernance ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Play className="h-3.5 w-3.5" />}
+                      {isScanningGovernance ? 'Scanning uploaded PDF...' : 'Run Governance Scan'}
+                    </button>
+                  </div>
+                )
+              )}
 
-              {/* ==================== TAB 5: RUBRIC SETTINGS ==================== */}
-              {activeTab === 'settings' && (
+              {activeTab === 'insights' && insightsView === 'governance' && govPdfCompany && (() => {
+                const govCompany = govPdfCompany;
+                const critCount = govCompany.flags.filter(f => f.severity === 'critical').length;
+                const modCount = govCompany.flags.filter(f => f.severity === 'moderate').length;
+
+                const getScoreColor = (s: number) => s >= 60 ? '#22c55e' : s >= 40 ? '#f59e0b' : '#ef4444';
+                const getPolicyBadge = (p: string) => p === 'Verified' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : p === 'Partial' ? 'bg-amber-50 text-amber-700 border-amber-200' : 'bg-rose-50 text-rose-700 border-rose-200';
+                const getRiskBadge = (r: string) => r === 'Low Risk' ? 'bg-emerald-50 text-emerald-700' : r === 'Moderate Risk' ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700';
+
+                const circumference = 2 * Math.PI * 28;
+                const offset = circumference - (govCompany.score / 100) * circumference;
+
+                const handleGovReasoning = () => {
+                  if (govReasoningOpen) {
+                    setGovReasoningOpen(false);
+                    setGovReasoningError(null);
+                    return;
+                  }
+                  setGovReasoningOpen(true);
+                  setGovReasoningLoading(false);
+                  setGovReasoningError(govReasoningResult ? null : 'No saved reasoning is attached to this report. Run the Governance scan again.');
+                };
+
+                return (
+                  <div className="space-y-4 animate-fade-in">
+                    <div className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-3 shadow-3xs">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-orange-50 text-[#F27D26]">
+                        <ShieldAlert className="h-4.5 w-4.5" />
+                      </span>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[8px] font-black uppercase tracking-widest text-slate-400">Governance PDF analysis</p>
+                        <p className="truncate text-[11px] font-black text-slate-800">{govCompany.name}</p>
+                        <p className="truncate text-[8.5px] font-mono text-slate-400">{pdfMeta?.name ?? govCompany.ticker}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-3xs">
+                        <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">AI Gov Score</span>
+                        <span className="text-xl font-black font-mono mt-1 block" style={{ color: getScoreColor(govCompany.score) }}>{govCompany.score}/100</span>
+                        <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded-sm border ${getRiskBadge(govCompany.riskLabel)}`}>{govCompany.riskLabel}</span>
+                      </div>
+                      <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-3xs">
+                        <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">AI Policy Found</span>
+                        <span className={`text-sm font-black font-mono mt-1 block ${govCompany.policy === 'Verified' ? 'text-emerald-600' : govCompany.policy === 'Partial' ? 'text-amber-500' : 'text-red-500'}`}>{govCompany.policy}</span>
+                        <span className="text-[8px] text-slate-400 font-sans">{govCompany.policy === 'Verified' ? 'Published & approved' : govCompany.policy === 'Partial' ? 'Partially disclosed' : 'No policy detected'}</span>
+                      </div>
+                      <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-3xs">
+                        <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">Pages Scanned</span>
+                        <span className="text-xl font-black font-mono text-slate-900 mt-1 block">{govCompany.pages}</span>
+                        <span className="text-[8px] text-slate-400 font-sans">Disclosures analysed</span>
+                      </div>
+                      <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-3xs">
+                        <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">Risk Flags</span>
+                        <span className="text-xl font-black font-mono text-red-500 mt-1 block">{govCompany.flags.length}</span>
+                        <span className="text-[8px] text-slate-400 font-sans">{critCount} critical · {modCount} moderate</span>
+                      </div>
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs space-y-4">
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-widest">AI Governance Sub-Score</span>
+                        <span className={`text-[8px] font-extrabold px-2 py-0.5 rounded font-mono uppercase ${getRiskBadge(govCompany.riskLabel)}`}>{govCompany.riskLabel}</span>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="relative w-16 h-16 shrink-0">
+                          <svg width="64" height="64" viewBox="0 0 64 64" className="-rotate-90">
+                            <circle cx="32" cy="32" r="28" fill="none" stroke="#e2e8f0" strokeWidth="6" />
+                            <circle cx="32" cy="32" r="28" fill="none" stroke={getScoreColor(govCompany.score)} strokeWidth="6"
+                              strokeDasharray={circumference} strokeDashoffset={offset} strokeLinecap="round" />
+                          </svg>
+                          <div className="absolute inset-0 flex flex-col items-center justify-center">
+                            <span className="text-base font-black font-mono leading-none" style={{ color: getScoreColor(govCompany.score) }}>{govCompany.score}</span>
+                            <span className="text-[8px] text-slate-400 leading-none">/100</span>
+                          </div>
+                        </div>
+                        <div className="space-y-1 min-w-0">
+                          <p className="text-xs font-extrabold text-slate-900 truncate">{govCompany.name}</p>
+                          <p className="text-[9px] text-slate-400 font-mono">{govCompany.ticker}</p>
+                          <div className="flex flex-wrap items-center gap-1">
+                            <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border ${getPolicyBadge(govCompany.policy)}`}>Policy: {govCompany.policy}</span>
+                            <span className="text-[8px] text-emerald-600 font-bold">{govCompany.trendDelta > 0 ? '+' : ''}{govCompany.trendDelta}pts</span>
+                          </div>
+                          <p className="text-[8px] text-slate-400 font-mono">Last scanned: {govCompany.lastScanned}</p>
+                        </div>
+                      </div>
+                      <div className="space-y-2.5">
+                        <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">Score Breakdown:</span>
+                        {govCompany.pillars.map(p => (
+                          <div key={p.name} className="flex items-center gap-2">
+                            <span className="text-[9px] font-sans text-slate-500 w-24 shrink-0">{p.name}</span>
+                            <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${p.score}%`, backgroundColor: getScoreColor(p.score) }} />
+                            </div>
+                            <span className="text-[9px] font-black font-mono w-6 text-right" style={{ color: getScoreColor(p.score) }}>{p.score}</span>
+                          </div>
+                        ))}
+                      </div>
+                      <button onClick={handleGovReasoning}
+                        className="w-full flex items-center justify-between bg-slate-50 border border-slate-200 px-3 py-2 rounded-lg text-[9.5px] font-bold font-sans text-slate-700 hover:bg-slate-900 hover:text-white transition-all cursor-pointer uppercase tracking-wider"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          {govReasoningLoading && <RefreshCw className="w-3 h-3 animate-spin" />}
+                           {govReasoningLoading ? 'Groq is analysing...' : 'View Full AI Reasoning'}
+                        </span>
+                        {!govReasoningLoading && (govReasoningOpen ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />)}
+                      </button>
+                      {govReasoningOpen && (
+                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-3.5 animate-slide-in">
+                          {govReasoningLoading && (
+                            <div className="flex flex-col items-center gap-2 py-4">
+                              <RefreshCw className="w-5 h-5 text-[#F27D26] animate-spin" />
+                              <p className="text-[9.5px] text-slate-400 font-sans animate-pulse">Scanning {govCompany.pages} pages of disclosures...</p>
+                            </div>
+                          )}
+                          {govReasoningError && !govReasoningLoading && (
+                            <div className="bg-red-50 border border-red-200 p-2.5 rounded-lg text-[9.5px] text-red-700 font-sans">
+                              <p className="font-bold">Analysis failed</p>
+                              <p className="mt-0.5 text-red-500">{govReasoningError}</p>
+                            </div>
+                          )}
+                          {govReasoningResult && !govReasoningLoading && (
+                            <>
+                              <div className="space-y-2">
+                                <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">What the AI looked for:</span>
+                                {govReasoningResult.checks.map((check, i) => (
+                                  <div key={i} className="flex items-start gap-1.5 text-[9.5px] font-sans">
+                                    {check.found ? <CheckCircle className="w-3.5 h-3.5 text-emerald-500 shrink-0 mt-0.5" /> : <X className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" />}
+                                    <span className={check.found ? 'text-slate-800' : 'text-slate-400'}>{check.text}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="bg-white border border-slate-150 p-3 rounded-lg space-y-1">
+                                <span className="text-[8px] font-mono font-extrabold text-[#F27D26] uppercase tracking-widest block">AI Summary:</span>
+                                <p className="text-[10px] text-slate-600 font-sans leading-relaxed">{govReasoningResult.summary}</p>
+                              </div>
+                              <div className="space-y-1.5">
+                                <span className="text-[8px] font-mono font-extrabold text-slate-400 uppercase tracking-widest block">How to improve this score:</span>
+                                {govReasoningResult.improvements.map((imp, i) => (
+                                  <div key={i} className="flex items-start gap-1.5 text-[9.5px] font-sans text-slate-500">
+                                    <span className="text-[#F27D26] font-black mt-0.5">•</span>{imp}
+                                  </div>
+                                ))}
+                              </div>
+                               <p className="text-right text-[8px] text-slate-300 font-mono">Generated by Groq · {govCompany.pages ? `${govCompany.pages} pages` : 'uploaded PDF'} scanned</p>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-3xs space-y-3">
+                      <div className="flex items-center justify-between border-b pb-2">
+                        <span className="text-[9px] font-mono font-extrabold text-slate-400 uppercase tracking-widest">Risk Flags Detected</span>
+                        <span className={`text-[8px] font-black px-2 py-0.5 rounded font-mono ${govCompany.flags.length >= 4 ? 'bg-rose-50 text-rose-700' : govCompany.flags.length >= 2 ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                          {govCompany.flags.length} flags
+                        </span>
+                      </div>
+                      <div className="space-y-2.5">
+                        {govCompany.flags.map((flag, i) => (
+                          <div key={i} className={`p-2.5 rounded-lg border-l-2 ${flag.severity === 'critical' ? 'bg-rose-50 border-l-red-500' : 'bg-amber-50 border-l-amber-400'}`}>
+                            <div className="flex items-start gap-1.5">
+                              {flag.severity === 'critical' ? <AlertTriangle className="w-3.5 h-3.5 text-red-500 shrink-0 mt-0.5" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />}
+                              <div className="min-w-0">
+                                <p className={`text-[10px] font-extrabold leading-snug ${flag.severity === 'critical' ? 'text-red-700' : 'text-amber-700'}`}>{flag.title}</p>
+                                <p className="text-[9px] text-slate-500 font-sans mt-0.5 leading-snug">{flag.description}</p>
+                                <p className="text-[8px] font-mono text-slate-400 mt-0.5">{flag.source}</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 justify-center py-2 text-[9px] text-slate-400 font-sans border-t border-slate-200">
+                      <ShieldAlert className="w-3 h-3 text-[#F27D26] shrink-0" />
+                      <span>AI Governance Checker · Suhail · Group 03</span>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* Rules are integrated into the Profile tab. */}
+              {activeTab === 'profile' && profileSection === 'rules' && (
                 <div className="space-y-4 animate-fade-in font-sans">
+
+                  <button
+                    type="button"
+                    onClick={() => setProfileSection(null)}
+                    className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-slate-500 transition hover:text-[#F27D26]"
+                    aria-label="Back to profile"
+                  >
+                    <ChevronLeft className="h-3.5 w-3.5" />
+                    Profile
+                  </button>
+
+                  <div className="rounded-2xl bg-slate-900 p-4 text-left text-white shadow-sm">
+                    <div className="flex items-center gap-2">
+                      <Sliders className="h-4 w-4 text-[#F27D26]" />
+                      <h2 className="text-base font-black tracking-tight">Audit Rules</h2>
+                    </div>
+                    <p className="mt-1 text-[10px] leading-relaxed text-slate-300">
+                      Configure the standards used to classify report findings and workforce risk.
+                    </p>
+                  </div>
 
                   {/* Explainer card */}
                   <div className="bg-white border rounded-xl p-3.5 space-y-2 shadow-3xs text-left">
@@ -3230,30 +3776,22 @@ export default function App() {
                 </button>
 
                 <button
-                  onClick={() => { setActiveTab('history'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
-                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'history' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
+                  onClick={() => { setActiveTab('insights'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
+                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'insights' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
                 >
-                  <History className="w-4.5 h-4.5 shrink-0" />
-                  <span className="text-[8px] uppercase font-sans font-black tracking-wider leading-none">History</span>
-                  {activeTab === 'history' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
+                  <Sparkles className="w-4.5 h-4.5 shrink-0" />
+                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Insights</span>
+                  {activeTab === 'insights' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
                 </button>
 
                 <button
-                  onClick={() => { setActiveTab('settings'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
-                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'settings' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
+                  onClick={() => { setActiveTab('profile'); setProfileSection(null); setSelectedBlockId(null); setIsViewingTemporal(false); }}
+                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'profile' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
+                  aria-label="Open advisor profile"
                 >
-                  <Sliders className="w-4.5 h-4.5 shrink-0" />
-                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Rules</span>
-                  {activeTab === 'settings' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
-                </button>
-
-                <button
-                  onClick={() => { setActiveTab('social-scan'); setSelectedBlockId(null); setIsViewingTemporal(false); }}
-                  className={`flex flex-col items-center gap-1 cursor-pointer select-none py-1 relative ${activeTab === 'social-scan' ? 'text-[#F27D26] font-bold' : 'hover:text-slate-700'}`}
-                >
-                  <Radar className="w-4.5 h-4.5 shrink-0" />
-                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Scan</span>
-                  {activeTab === 'social-scan' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
+                  <UserRound className="w-4.5 h-4.5 shrink-0" />
+                  <span className="text-[8.5px] uppercase font-sans font-black tracking-widest leading-none">Profile</span>
+                  {activeTab === 'profile' && <span className="absolute -bottom-1 left-1.5 right-1.5 h-0.5 bg-[#F27D26] rounded-full" />}
                 </button>
 
               </div>

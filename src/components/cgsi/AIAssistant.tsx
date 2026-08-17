@@ -85,17 +85,17 @@ export function AIAssistant() {
     return (
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-20 right-6 z-40 flex h-14 w-14 items-center justify-center rounded-full bg-cgsi-navy text-white shadow-lg transition hover:scale-105"
+        className="absolute right-4 bottom-20 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-cgsi-navy text-white shadow-lg transition hover:scale-105"
         aria-label="Open CGSI AI Assistant"
       >
-        <Bot className="h-6 w-6" />
+        <Bot className="h-5 w-5" />
       </button>
     );
   }
 
   return (
-    <div className="fixed bottom-20 right-3 z-50 w-[340px] max-w-[calc(100vw-1.5rem)] overflow-hidden rounded-xl border bg-white shadow-2xl">
-      <div className="flex items-center justify-between bg-cgsi-navy px-4 py-3 text-white">
+    <div className="absolute right-3 bottom-[4.25rem] z-50 flex max-h-[calc(100%-5.25rem)] w-[calc(100%-1.5rem)] max-w-[320px] flex-col overflow-hidden rounded-xl border bg-white shadow-2xl">
+      <div className="flex shrink-0 items-center justify-between bg-cgsi-navy px-3 py-2.5 text-white">
         <div className="flex items-center gap-2">
           <Bot className="h-5 w-5 text-emerald-300" />
           <div>
@@ -108,7 +108,7 @@ export function AIAssistant() {
         </button>
       </div>
 
-      <div aria-live="polite" className="max-h-72 space-y-2 overflow-auto bg-slate-50 p-4">
+      <div aria-live="polite" className="min-h-0 flex-1 space-y-2 overflow-auto bg-slate-50 p-3">
         {messages.map((message, index) => (
           <div
             key={`${message.role}-${index}`}
@@ -120,7 +120,7 @@ export function AIAssistant() {
               </div>
             )}
             <div
-              className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-sm shadow-sm ${
+              className={`max-w-[85%] whitespace-pre-wrap rounded-lg px-3 py-2 text-xs leading-5 shadow-sm ${
                 message.role === "user"
                   ? "rounded-tr-sm bg-cgsi-navy text-white"
                   : "rounded-tl-sm bg-white text-slate-700"
@@ -137,13 +137,13 @@ export function AIAssistant() {
         )}
       </div>
 
-      <form onSubmit={sendMessage} className="flex gap-2 border-t bg-white p-3">
+      <form onSubmit={sendMessage} className="flex shrink-0 gap-2 border-t bg-white p-2.5">
         <input
           value={input}
           onChange={(event) => setInput(event.target.value)}
           placeholder="Ask about ESG or risk…"
           maxLength={2_000}
-          className="h-9 min-w-0 flex-1 rounded-md border px-3 text-sm outline-none focus:border-cgsi-navy"
+          className="h-9 min-w-0 flex-1 rounded-md border px-3 text-xs outline-none focus:border-cgsi-navy"
           aria-label="Message the AI assistant"
         />
         <Button
@@ -157,7 +157,7 @@ export function AIAssistant() {
         </Button>
       </form>
 
-      <div className="flex gap-2 border-t bg-slate-50 px-3 py-2">
+      <div className="flex shrink-0 gap-2 border-t bg-slate-50 px-3 py-1.5">
         <Button asChild size="sm" variant="ghost" className="h-7 flex-1 text-xs">
           <Link to="/matches" onClick={() => setOpen(false)}>
             Top Matches

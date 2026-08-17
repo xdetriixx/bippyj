@@ -34,6 +34,8 @@ interface WorkforcePanelProps {
   savedScan?: StoredWorkforceScan | null;
   /** Optional band overrides assembled from the Rules tab. */
   thresholdInstruction?: string;
+  /** Lets the History list immediately show that this report now has a saved scan. */
+  onScanSaved?: () => void;
 }
 
 const STATUS_STYLES: Record<WorkforceStatus, string> = {
@@ -56,6 +58,7 @@ export default function WorkforcePanel({
   reportId,
   savedScan = null,
   thresholdInstruction,
+  onScanSaved,
 }: WorkforcePanelProps) {
   const [scan, setScan] = useState<StoredWorkforceScan | null>(savedScan);
   const [isScanning, setIsScanning] = useState(false);
@@ -71,7 +74,8 @@ export default function WorkforcePanel({
       setScan(response.result);
       // Persistence is best effort. A Firestore failure should not
       // discard a scan the advisor is already looking at.
-      await storeWorkforceScan({ reportId, result: response.result }).catch(() => undefined);
+      const savedReportId = await storeWorkforceScan({ reportId, result: response.result }).catch(() => null);
+      if (savedReportId) onScanSaved?.();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "The workforce scan failed.");
     } finally {
@@ -105,21 +109,6 @@ export default function WorkforcePanel({
         </span>
         <WorkforceHowItWorks />
       </div>
-      {/* Dark header card, same treatment as the Reports and History headers */}
-      <div className="bg-slate-900 text-white rounded-2xl p-4 shadow-sm relative overflow-hidden">
-        <Users className="absolute -right-3 -bottom-3 w-24 h-24 opacity-10" />
-        <div className="relative space-y-1">
-          <div className="bg-slate-800 px-2 py-0.5 text-[8px] tracking-widest font-mono font-bold uppercase rounded-sm inline-block">
-            ESG Social Blind Spot
-          </div>
-          <h2 className="text-base font-bold tracking-tight">AI Workforce Score</h2>
-          <p className="text-[10px] text-slate-300 leading-relaxed max-w-xs">
-            Scans the same disclosure for reskilling investment, displacement risk, and new role
-            creation. Surfaces what a clean ESG Social score cannot.
-          </p>
-        </div>
-      </div>
-
       {error && (
         <div className="bg-rose-50 border border-rose-200 text-rose-700 rounded-xl p-3 text-[10px] leading-relaxed">
           {error}
