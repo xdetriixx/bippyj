@@ -1038,7 +1038,13 @@ function DashboardView({
       const day = new Date(start + i * dayMs);
       return {
         date: day.toISOString().slice(5, 10),
-        risk: bucket.length === 0 ? 0 : computeRiskScore(bucket),
+        // null (not 0) when no posts were found that day -- a flat 0 would
+        // be indistinguishable from a day where posts WERE found and
+        // scored genuinely clean, which is a materially different signal
+        // for a risk tool. Recharts skips null points instead of drawing
+        // through them, so "no data" reads as a visible gap in the line.
+        risk: bucket.length === 0 ? null : computeRiskScore(bucket),
+        postCount: bucket.length,
       };
     });
   }, [filteredPosts, lastScan]);
@@ -1291,6 +1297,9 @@ function DashboardView({
                     borderRadius: 8,
                     fontSize: 11,
                   }}
+                  formatter={(value: number | null) =>
+                    value === null ? ["No posts found", "Risk"] : [value, "Risk"]
+                  }
                 />
                 <ReferenceLine y={ALERT_THRESHOLD} stroke="var(--color-destructive)" strokeDasharray="3 3" />
                 {selectedDay && (
@@ -1303,6 +1312,7 @@ function DashboardView({
                   strokeWidth={2}
                   dot={{ r: 2 }}
                   activeDot={{ r: 5, style: { cursor: "pointer" } }}
+                  connectNulls={false}
                 />
               </LineChart>
             </ResponsiveContainer>
