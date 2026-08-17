@@ -526,11 +526,17 @@ async function selectRelevant(
         {
           role: "system",
           content:
-            `You are filtering scanned social posts for relevance to "${company}" and the ESG ` +
-            `categories [${esg.join(", ")}]. From the numbered candidates below, pick up to ${count} ` +
-            `posts that are genuinely relevant (mention the company/products, or clearly discuss one ` +
-            `of the given ESG topics in connection with it) and assign each an ESG category, or null ` +
-            `if off-topic. Only reference indices that were given to you — never invent one.`,
+            `You are filtering scanned social posts for relevance to a specific company: "${company}". ` +
+            `A post qualifies ONLY if it clearly refers to this company — by name, an unambiguous ` +
+            `brand/product tied to it, or an unmistakable reference (e.g. replying to the company's own ` +
+            `account, naming its known executives/services). Thematic similarity to the ESG topics below ` +
+            `is NOT enough on its own: reject any post about a generic topic (an outage, a data breach, a ` +
+            `natural disaster, layoffs, etc.) that never actually names or unambiguously identifies "${company}", ` +
+            `even if it superficially matches a keyword used to find it. From the numbered candidates below, ` +
+            `pick up to ${count} posts that pass this company-relevance bar, then assign each one an ESG ` +
+            `category from [${esg.join(", ")}] if it clearly relates to one, or null if it's about the ` +
+            `company but not clearly ESG-relevant. Only reference indices that were given to you — never ` +
+            `invent one.`,
         },
         { role: "user", content: numbered },
       ],
