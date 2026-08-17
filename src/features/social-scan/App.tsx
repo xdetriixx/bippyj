@@ -1124,6 +1124,12 @@ function DashboardView({
 
   return (
     <>
+      {lastScan?.company && (
+        <p className="text-center text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+          {lastScan.company}
+        </p>
+      )}
+
       {/* Sticky summary — Risk score + Alerts + Sentiment stay visible while scrolling */}
       <div
         className={`sticky top-[57px] z-10 -mx-4 px-4 bg-background/95 backdrop-blur border-b border-border transition-all duration-200 ${
