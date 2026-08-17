@@ -179,18 +179,18 @@ export const parseBmc = createServerFn({ method: "POST" })
     const prompt = `You are a senior corporate strategy advisor. Analyse only explicit evidence in the supplied report and return a complete Osterwalder Business Model Canvas.
 
 Return valid JSON only:
-{"advisorMetrics":{"opportunityScore":0,"riskScore":0,"riskTier":"Low Risk | Medium Risk | High Risk","scalabilityRating":"short label","opportunityDriver":"short reason","keyThreat":"short threat","insight":"advisor insight","highPoints":0,"mediumPoints":0,"lowPoints":0,"operatingLeverage":{"revPerEmp":0,"staffCostPerEmp":0},"techLeveragePercent":0,"nicheRevenueGrowth":0,"totalRevenueGrowth":0,"infraOverheadPercent":0,"revenuePerEmployee":0,"fixedCostIntensity":0,"feeIncomePercent":0,"crossBorderRevenueGrowth":0,"staffCostsPercentOfRevenue":0,"staffCostsGrowthRate":0,"revenueGrowthRate":0,"scalabilityRiskAlert":"short alert","scalabilityRiskRating":"LOW | MEDIUM | HIGH","transparencySentimentScore":0,"transparencySentimentLabel":"short label","transparencySentimentInsight":"short insight"},"blocks":[{"id":"CS | VP | CH | CR | RS | KR | KA | KP | CS_COST","name":"block name","keyPoints":[{"point":"concise finding","description":"business explanation","evidenceQuote":"short exact quote","pageNumber":"page number or Unknown","riskRating":"Low | Medium | High","riskDescription":"rating reason"}]}]}
+{"companyName":"the exact legal or trading name of the company this report is about, read from the report content itself (cover page, letterhead, repeated references) -- not guessed from context clues alone","advisorMetrics":{"opportunityScore":0,"riskScore":0,"riskTier":"Low Risk | Medium Risk | High Risk","scalabilityRating":"short label","opportunityDriver":"short reason","keyThreat":"short threat","insight":"advisor insight","highPoints":0,"mediumPoints":0,"lowPoints":0,"operatingLeverage":{"revPerEmp":0,"staffCostPerEmp":0},"techLeveragePercent":0,"nicheRevenueGrowth":0,"totalRevenueGrowth":0,"infraOverheadPercent":0,"revenuePerEmployee":0,"fixedCostIntensity":0,"feeIncomePercent":0,"crossBorderRevenueGrowth":0,"staffCostsPercentOfRevenue":0,"staffCostsGrowthRate":0,"revenueGrowthRate":0,"scalabilityRiskAlert":"short alert","scalabilityRiskRating":"LOW | MEDIUM | HIGH","transparencySentimentScore":0,"transparencySentimentLabel":"short label","transparencySentimentInsight":"short insight"},"blocks":[{"id":"CS | VP | CH | CR | RS | KR | KA | KP | CS_COST","name":"block name","keyPoints":[{"point":"concise finding","description":"business explanation","evidenceQuote":"short exact quote","pageNumber":"page number or Unknown","riskRating":"Low | Medium | High","riskDescription":"rating reason"}]}]}
 
 Return all nine blocks in this order: Customer Segments, Value Propositions, Channels, Customer Relationships, Revenue Streams, Key Resources, Key Activities, Key Partners, Cost Structure. Use exactly 1 concise keyPoint per block. Never invent quotations or figures. For advisorMetrics, estimate numeric values only from the supplied report evidence; if exact values are unavailable, provide a clearly reasoned estimate from the extracted evidence. Do not return 0 for revenuePerEmployee, staff costs, growth rates, sentiment scores, or percentage metrics unless the report explicitly proves the value is zero.
 
 ${data.riskInstructionBar}
-Company: ${data.companyName}
+Uploaded filename (unreliable — often generic, e.g. "report.pdf" or "document.pdf"; use only if the report content itself gives no clearer answer): ${data.companyName}
 Report type: ${data.reportType}
 
 REPORT:
 ${compressedReport}`;
 
-    const parsed = parseAdvisorJson<{ advisorMetrics: AdvisorMetrics; blocks: BMCBlock[] }>(
+    const parsed = parseAdvisorJson<{ companyName?: string; advisorMetrics: AdvisorMetrics; blocks: BMCBlock[] }>(
       await generateAdvisorContent(prompt, true),
     );
     if (!Array.isArray(parsed.blocks) || parsed.blocks.length === 0) {
@@ -201,6 +201,9 @@ ${compressedReport}`;
     }
     const pointCount = parsed.blocks.reduce((sum, block) => sum + block.keyPoints.length, 0);
     const hours = Math.round((2.5 + Math.min(8, data.customText.length / 8_000)) * 10) / 10;
+    // Prefer the name the AI actually read from the report content; fall back
+    // to the filename-derived hint only if extraction came back empty.
+    const extractedCompanyName = parsed.companyName?.trim() || data.companyName;
     return {
       status: "success" as const,
       result: {
@@ -210,7 +213,7 @@ ${compressedReport}`;
           confidenceScore: Math.min(0.98, Math.round((0.82 + pointCount * 0.008) * 100) / 100),
           manpowerCostSavedUSD: Math.round(hours * 65),
         },
-        companyName: data.companyName,
+        companyName: extractedCompanyName,
         reportType: data.reportType,
         parsedAt: new Date().toISOString(),
         isSimulated: false,
